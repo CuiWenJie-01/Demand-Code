@@ -1,0 +1,1271 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>化学品信息查询</title>
+<!--    &lt;!&ndash; 引入Vue3框架 &ndash;&gt;-->
+<!--    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>-->
+    <!-- 引入Vue3框架 - 使用本地文件 -->
+    <script src="/js/vue.global.js"></script>
+    <style>
+        /* 页面基本样式设置 */
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        /* 分页控件样式 */
+        .pagination button {
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .pagination button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        .pagination select {
+            padding: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        /* 容器样式 */
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 标题样式 */
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+
+        /* 搜索框容器样式 */
+        .search-box {
+            display: flex;
+            margin-bottom: 20px;
+        }
+
+        /* 输入框样式 */
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px 0 0 4px;
+            font-size: 16px;
+        }
+
+        /* 按钮样式 */
+        button {
+            padding: 12px 24px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 0 4px 4px 0;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        /* 首页按钮样式 */
+        .home-button {
+            padding: 12px 24px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        /* 首页按钮悬停效果 */
+        .home-button:hover {
+            background-color: #218838;
+        }
+
+        /* 按钮悬停效果 */
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* 禁用按钮样式 */
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        /* 结果区域样式 */
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        /* 结果标题样式 */
+        .result h2 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        /* 加载中提示样式 */
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        /* 错误信息样式 */
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        /* 信息项样式 */
+        .info-item {
+            margin-bottom: 10px;
+        }
+
+        /* 信息标签样式 */
+        .info-label {
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        /* 二维码容器样式 */
+        .qr-code-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        /* 二维码图片样式 */
+        .qr-code-container img {
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: white;
+        }
+
+        /* 二维码按钮样式 */
+        .qr-code-container button {
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+
+        /* 打印按钮容器样式 */
+        .print-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        /* 打印按钮样式 */
+        .print-buttons button {
+            margin: 0 10px;
+            border-radius: 4px;
+        }
+
+        /* 表格样式 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        /* 表格单元格样式 */
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        /* 表格表头样式 */
+        th {
+            background-color: #f2f2f2;
+        }
+
+        /* 打印样式设置 */
+        @media print {
+            body {
+                background-color: white;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                box-shadow: none;
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+                max-width: 100mm; /* ZDesigner ZT231-300dpi打印机的标准标签宽度 */
+                margin: 0;
+                padding: 0;
+            }
+
+            button {
+                display: none;
+            }
+
+            .no-print {
+                display: none;
+            }
+
+            .print-only-qr {
+                text-align: center;
+            }
+
+            .print-only-qr .info-item {
+                font-size: 18px;
+            }
+
+            .print-only-qr .qr-code-container img {
+                width: 80mm; /* 适合标签的二维码尺寸 */
+                height: 80mm;
+            }
+
+            .print-content {
+                display: block;
+                width: 100mm;
+                min-height: 60mm;
+                padding: 5mm;
+                box-sizing: border-box;
+                font-family: Arial, sans-serif;
+                font-size: 8pt;
+            }
+
+            /* 适配ZDesigner ZT231-300dpi打印机的打印样式 */
+            .zpl-label {
+                width: 100mm;
+                min-height: 60mm;
+                padding: 5mm;
+                font-family: 'Arial', sans-serif;
+                font-size: 8pt;
+                box-sizing: border-box;
+            }
+
+            .zpl-header {
+                text-align: center;
+                margin-bottom: 2mm;
+                border-bottom: 1px solid #000;
+                padding-bottom: 1mm;
+            }
+
+            .zpl-content {
+                display: flex;
+                justify-content: space-between;
+            }
+
+            .zpl-info {
+                width: 55%;
+            }
+
+            .zpl-qr {
+                width: 40%;
+                text-align: center;
+            }
+
+            .zpl-qr img {
+                width: 35mm;
+                height: 35mm;
+            }
+
+            .zpl-field {
+                margin-bottom: 1mm;
+                line-height: 1.2;
+            }
+
+            .zpl-label-text {
+                font-weight: bold;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- Vue应用根节点 -->
+<div id="app">
+    <div class="container">
+        <!-- 页面标题 -->
+        <h1 class="no-print">化学品信息查询系统</h1>
+
+        <!-- 返回首页按钮：当有查询结果时显示 -->
+        <button v-if="result" @click="goHome" class="home-button no-print">回到首页</button>
+
+        <!-- 新增化学品按钮 -->
+        <button v-if="!result && !showAddForm && chemicals.length > 0" @click="showAddForm = true" class="home-button no-print">新增化学品</button>
+
+        <!-- 新增化学品表单 -->
+        <div v-if="showAddForm" class="result no-print">
+            <h2>新增化学品</h2>
+            <form @submit.prevent="addChemical">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div>
+                        <label class="info-label">CAS号:</label>
+                        <input v-model="newChemical.casNumber" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">中文名:</label>
+                        <input v-model="newChemical.name" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">外文名:</label>
+                        <input v-model="newChemical.englishName" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">浓度:</label>
+                        <input v-model="newChemical.concentration" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">规格:</label>
+                        <input v-model="newChemical.specification" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">分子量:</label>
+                        <input v-model="newChemical.weight" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">分子式:</label>
+                        <input v-model="newChemical.formula" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">厂家:</label>
+                        <input v-model="newChemical.manufacturer" type="text" required style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <!-- 新增字段 -->
+                    <div>
+                        <label class="info-label">产品编号:</label>
+                        <input v-model="newChemical.productNumber" type="text" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">分类:</label>
+                        <input v-model="newChemical.category" type="text" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">批次号:</label>
+                        <input v-model="newChemical.batchNumber" type="text" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">备注:</label>
+                        <input v-model="newChemical.remark" type="text" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                    </div>
+                    <div>
+                        <label class="info-label">分子结构图:</label>
+                        <input type="file" @change="handleImageUpload" accept="image/*" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                        <div v-if="imagePreview" style="margin-top: 10px;">
+                            <img :src="imagePreview" alt="预览图片" style="max-width: 100px; max-height: 100px;">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 15px;">
+                    <button type="submit" :disabled="adding" style="margin-right: 10px;">{{ adding ? '添加中...' : '添加' }}</button>
+                    <button type="button" @click="cancelAdd" :disabled="adding">取消</button>
+                </div>
+            </form>
+
+            <div v-if="addError" class="error" style="margin-top: 15px;">
+                {{ addError }}
+            </div>
+        </div>
+
+        <!-- 搜索框组件 -->
+        <div class="search-box no-print">
+            <!-- 搜索输入框，绑定identifier数据，支持回车搜索 -->
+            <input
+                    v-model="identifier"
+                    placeholder="请输入中文名、外文名或 CAS号 (例如: 1,2,3-三甲氧基苯 或 621-23-8)"
+                    @keyup.enter="searchChemical"
+            >
+            <!-- 搜索按钮，根据loading状态和输入内容控制是否可点击 -->
+            <button @click="searchChemical" :disabled="loading || !identifier.trim()">
+                {{ loading ? '查询中...' : '查询' }}
+            </button>
+        </div>
+
+        <!-- 错误信息显示区域 -->
+        <div v-if="error" class="error no-print">
+            {{ error }}
+        </div>
+
+        <!-- 加载中提示区域 -->
+        <div v-if="loading" class="loading no-print">
+            正在查询中，请稍候...
+        </div>
+
+        <!-- 查询结果显示区域 -->
+        <div v-if="result" class="result">
+            <!-- 显示与图片完全一致的界面 -->
+            <div style="border: 1px solid #ccc; padding: 20px; margin-bottom: 20px;" class="print-content">
+                <!-- 实验室logo和名称 -->
+                <div style="display: flex; align-items: center; margin-bottom: 20px;">
+                    <!-- 实验室logo图片 -->
+                    <img src="/img/logo1.png" alt="实验室logo" style="width: 60px; height: 60px; margin-right: 10px;">
+                    <div>
+                        <!-- 实验室中文名称 -->
+                        <div style="font-size: 18px; font-weight: bold;">精准智能化学全国重点实验室</div>
+                        <!-- 实验室英文名称 -->
+                        <div style="font-size: 12px; color: #666;">STATE KEY LABORATORY OF PRECISION AND INTELLIGENT CHEMISTRY</div>
+                    </div>
+                </div>
+
+                <!-- 化学品信息展示区域 -->
+                <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                    <!-- 左侧化学品基本信息 -->
+                    <div style="flex: 1;">
+                        <!-- 英文名称 -->
+                        <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px;">{{ result.englishName }}</div>
+                        <!-- 中文名称 -->
+                        <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px;">{{ result.name }}</div>
+
+                    <!-- 详细信息网格布局 -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <!-- 药品编码 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">药品编码: {{ result.id }}</div>
+                            <!-- CAS号 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">CAS号: {{ result.casNumber }}</div>
+                            <!-- 浓度 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">浓度: {{ result.concentration }}</div>
+                            <!-- 产品编号 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;" v-if="result.productNumber">产品编号: {{ result.productNumber }}</div>
+                            <!-- 分类 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;" v-if="result.category">分类: {{ result.category }}</div>
+                        </div>
+                        <div>
+                            <!-- 规格 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">规格: {{ result.specification }}</div>
+                            <!-- 分子量 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">分子量: {{ result.weight }}</div>
+                            <!-- 分子式 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;">分子式: {{ result.formula }}</div>
+                            <!-- 批次号 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;" v-if="result.batchNumber">批次号: {{ result.batchNumber }}</div>
+                            <!-- 入库时间 -->
+                            <div style="font-size: 14px; margin-bottom: 5px;" v-if="result.storageTime">入库时间: {{ formattedStorageTime}}</div>
+                        </div>
+                    </div>
+                    <!-- 备注信息 -->
+                    <div v-if="result.remark" style="margin-top: 10px;">
+                        <div style="font-size: 14px; margin-bottom: 5px;">
+                            <span style="font-weight: bold;">备注:</span> {{ result.remark }}
+                        </div>
+                    </div>
+                    </div>
+
+
+                    <!-- 分子结构图展示区域 -->
+                    <div style="flex: 1; display: flex; justify-content: center; align-items: center;">
+                        <!-- 分子结构图 -->
+                        <img :src="result.molecularStructureImage" onerror="this.src='/img/f1.png'" alt="分子结构图" style="width: 150px; height: 150px;">
+                    </div>
+
+
+                    <!-- 二维码展示区域 -->
+                    <div style="flex: 1; display: flex; justify-content: center; align-items: center;" id="qr-code-section">
+                        <div style="text-align: center;">
+                            <!-- 二维码加载中提示 -->
+                            <div v-if="!qrCodeData && !qrLoading" style="margin-bottom: 10px;">
+                                二维码生成中...
+                            </div>
+                            <!-- 二维码加载状态 -->
+                            <div v-if="qrLoading">
+                                二维码生成中...
+                            </div>
+                            <!-- 二维码图片显示 -->
+                            <div v-if="qrCodeData" style="margin-bottom: 10px;">
+                                <img :src="'data:image/png;base64,' + qrCodeData" alt="二维码" style="width: 150px; height: 150px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </div>
+
+
+            <!-- 打印操作按钮 -->
+            <div class="print-buttons no-print" v-if="result">
+                <!-- 打印全部数据按钮 -->
+                <button @click="printAllData">打印全部数据(标准尺寸)</button>
+                <!-- 新增小尺寸打印按钮 -->
+                <button @click="printAllDataSmall">打印全部数据(小尺寸)</button>
+                <!-- 新增：只打印分子结构图按钮 -->
+                <button @click="printMolecularStructure">只打印分子结构图</button>
+                <!-- 只打印二维码按钮（当二维码存在时显示） -->
+                <button @click="printQRCode" v-if="qrCodeData">只打印二维码</button>
+                <!-- 只打印logo） -->
+                <button @click="printLogo">只打印Logo</button>
+            </div>
+        </div>
+
+        <!-- 所有化学品列表展示区域（当没有查询结果时显示） -->
+        <div v-if="chemicals.length > 0 && !result" class="result no-print">
+            <h2>所有化学品列表</h2>
+            <!-- 化学品表格 -->
+            <table>
+                <thead>
+                <tr>
+                    <!-- 表头信息 -->
+                    <th>药品编码</th>
+                    <th>CAS号</th>
+                    <th>中文名</th>
+                    <th>外文名</th>
+                    <th>浓度</th>
+                    <th>规格</th>
+                    <th>分子量</th>
+                    <th>分子式</th>
+                    <th>厂家</th>
+                    <th>操作</th>
+                </tr>
+                </thead>
+                <tbody>
+                <!-- 遍历化学品列表，为每个化学品生成一行 -->
+                <tr v-for="chemical in chemicals" :key="chemical.id">
+                    <td>{{ chemical.id }}</td>
+                    <td>{{ chemical.casNumber }}</td>
+                    <td>{{ chemical.name }}</td>
+                    <td>{{ chemical.englishName }}</td>
+                    <td>{{ chemical.concentration }}</td>
+                    <td>{{ chemical.specification }}</td>
+                    <td>{{ chemical.weight }}</td>
+                    <td>{{ chemical.formula }}</td>
+                    <td>{{ chemical.manufacturer }}</td>
+                    <td>
+                        <!-- 查看详情按钮 -->
+                        <button @click="selectChemical(chemical)">查看详情</button>
+                        <!-- 删除按钮 -->
+                        <button @click="deleteChemical(chemical.id)" style="background-color: #dc3545; margin-left: 5px;">删除</button>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+            <!-- 分页控件 -->
+            <div class="pagination no-print" style="margin-top: 20px; text-align: center;">
+                <button @click="prevPage" :disabled="currentPage === 0">上一页</button>
+                <span style="margin: 0 15px;">
+                    第 {{ currentPage + 1 }} 页，共 {{ totalPages }} 页 (共 {{ totalElements }} 条记录)
+                </span>
+                <button @click="nextPage" :disabled="currentPage >= totalPages - 1">下一页</button>
+
+                <div style="margin-top: 10px;">
+                    <label>每页显示:
+                        <select v-model="pageSize" @change="changePageSize">
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 创建Vue应用
+    const { createApp } = Vue;
+
+    createApp({
+        // 数据属性
+        data() {
+            return {
+                identifier: '',        // 搜索标识符（中文名、外文名或CAS号）
+                result: null,          // 查询结果
+                chemicals: [],         // 所有化学品列表
+                loading: false,        // 查询加载状态
+                qrLoading: false,      // 二维码加载状态
+                error: null,           // 错误信息
+                qrCodeData: null,       // 二维码数据（Base64格式）
+                // 新增化学品相关
+                showAddForm: false,     // 是否显示新增表单
+                adding: false,          // 是否正在添加
+                addError: null,         // 添加错误信息
+                newChemical: {
+                    casNumber: '',
+                    name: '',
+                    englishName: '',
+                    concentration: '',
+                    specification: '',
+                    weight: '',
+                    formula: '',
+                    manufacturer: '',
+                    productNumber: '',
+                    category: '',
+                    batchNumber: '',
+                    remark: ''
+                },
+                imageFile: null,        // 上传的图片文件
+                imagePreview: null,     // 图片预览
+                // 分页相关数据
+                currentPage: 0,        // 当前页码
+                totalPages: 0,         // 总页数
+                totalElements: 0,      // 总元素数
+                pageSize: 10           // 每页显示数量
+            }
+        },
+        <!-- 在 data() 后面添加 computed -->
+        computed: {
+            formattedStorageTime() {
+                if (!this.result || !this.result.storageTime) {
+                    return '';
+                }
+                // 将 ISO 字符串解析为 Date 对象，并加上 8 小时（UTC+8）
+                const date = new Date(this.result.storageTime);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours() + 8).padStart(2, '0'); // 加上 8 小时
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}`;
+            }
+        },
+
+
+        // 组件挂载完成后执行
+        mounted() {
+            this.loadAllChemicals(); // 加载所有化学品列表
+        },
+        // 方法定义
+        methods: {
+            // 处理图片上传
+            handleImageUpload(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    this.imageFile = file;
+
+                    // 生成图片预览
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.imagePreview = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    this.imageFile = null;
+                    this.imagePreview = null;
+                }
+            },
+
+            // 新增化学品方法
+            async addChemical() {
+                this.adding = true;
+                this.addError = null;
+
+                // 自动设置入库时间为当前时间
+                this.newChemical.storageTime = new Date().toISOString();
+
+                try {
+                    const formData = new FormData();
+
+                    // 添加化学品数据（转换为JSON字符串）
+                    formData.append('chemicalData', new Blob([JSON.stringify(this.newChemical)], {
+                        type: 'application/json'
+                    }));
+
+                    // 添加图片文件（如果存在）
+                    if (this.imageFile) {
+                        formData.append('imageFile', this.imageFile);
+                    }
+
+                    const response = await fetch('/api/chemical', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        // 添加成功，重置表单并刷新列表
+                        const savedChemical = await response.json();
+                        this.resetAddForm();
+                        await this.loadAllChemicals();
+
+                        // 如果当前正在查看的化学品与新增的化学品相同，则更新显示信息
+                        if (this.result && this.result.casNumber === savedChemical.casNumber) {
+                            this.result = savedChemical;
+                            // 重新生成二维码
+                            await this.generateQRCode();
+                        }
+
+                        alert('化学品添加成功！');
+                    } else {
+                        const errorText = await response.text();
+                        this.addError = `添加失败: ${errorText}`;
+                    }
+                } catch (err) {
+                    this.addError = '网络错误，请检查您的网络连接';
+                    console.error('Error:', err);
+                } finally {
+                    this.adding = false;
+                }
+            },
+
+
+
+
+            // 取消新增化学品
+            cancelAdd() {
+                this.resetAddForm();
+            },
+
+            // 重置新增表单
+            resetAddForm() {
+                this.showAddForm = false;
+                this.newChemical = {
+                    casNumber: '',
+                    name: '',
+                    englishName: '',
+                    concentration: '',
+                    specification: '',
+                    weight: '',
+                    formula: '',
+                    manufacturer: '',
+                    productNumber: '',
+                    category: '',
+                    batchNumber: '',
+                    remark: ''
+                };
+                this.imageFile = null;
+                this.imagePreview = null;
+                this.showAddForm = false;
+                this.addError = null;
+            },
+            // 获取分子结构图路径
+            getMolecularStructureImage() {
+                if (this.result && this.result.casNumber) {
+                    return '/img/' + this.result.casNumber + '.png';
+                }
+                return '/img/f1.png';
+            },
+            // 分页相关方法
+            async goToPage(page) {
+                if (page >= 0 && page < this.totalPages) {
+                    this.currentPage = page;
+                    await this.loadAllChemicals();
+                }
+            },
+            async prevPage() {
+                if (this.currentPage > 0) {
+                    this.currentPage--;
+                    await this.loadAllChemicals();
+                }
+            },
+
+            async nextPage() {
+                if (this.currentPage < this.totalPages - 1) {
+                    this.currentPage++;
+                    await this.loadAllChemicals();
+                }
+            },
+
+            async changePageSize() {
+                this.currentPage = 0; // 重置到第一页
+                await this.loadAllChemicals();
+            },
+
+            async loadAllChemicals() {
+                this.loading = true; // 设置加载状态为true
+                try {
+                    // 发起获取所有化学品的请求，包含分页参数
+                    const response = await fetch(`/api/chemicals?page=${this.currentPage}&size=${this.pageSize}`);
+                    if (response.ok) {
+                        // 请求成功，更新化学品列表和分页信息
+                        const data = await response.json();
+                        this.chemicals = data.chemicals;
+                        this.currentPage = data.currentPage;
+                        this.totalPages = data.totalPages;
+                        this.totalElements = data.totalElements;
+                    } else {
+                        // 请求失败，设置错误信息
+                        this.error = '加载化学品列表失败';
+                    }
+                } catch (err) {
+                    // 网络错误处理
+                    this.error = '网络错误，请检查您的网络连接';
+                    console.error('Error:', err);
+                } finally {
+                    // 无论成功或失败，都将加载状态设为false
+                    this.loading = false;
+                }
+            },
+            // 加载化学品详情
+            async loadChemicalDetail(casNumber) {
+                try {
+                    const response = await fetch(`/api/chemical/${casNumber}`);
+                    if (response.ok) {
+                        this.result = await response.json();
+
+                        // 如果有分子结构图，则加载图片
+                        if (this.result.molecularStructureImage) {
+                            // 确保图片路径以 / 开头
+                            if (!this.result.molecularStructureImage.startsWith('/')) {
+                                this.result.molecularStructureImage = '/' + this.result.molecularStructureImage;
+                            }
+                            this.molecularStructureImage = this.result.molecularStructureImage;
+                        }
+
+                        // 生成二维码
+                        await this.generateQRCode();
+                    } else {
+                        alert('加载化学品详情失败');
+                    }
+                } catch (err) {
+                    console.error('Error:', err);
+                    alert('网络错误，请检查您的网络连接');
+                }
+            },
+
+
+            // 异步搜索化学品
+            async searchChemical() {
+                // 清除之前的结果和错误
+                this.result = null;
+                this.error = null;
+                this.qrCodeData = null;
+
+                // 检查输入是否为空
+                if (!this.identifier.trim()) {
+                    this.error = '请输入中文名、外文名或CAS号';
+                    return;
+                }
+
+                this.loading = true; // 设置加载状态为true
+
+                try {
+                    // 调用后端API获取化学品信息
+                    const response = await fetch(`/api/chemical?identifier=${encodeURIComponent(this.identifier.trim())}`);
+
+                    if (response.ok) {
+                        // 请求成功，更新查询结果
+                        this.result = await response.json();
+                        // 自动生成二维码
+                        await this.generateQRCode();
+                    } else if (response.status === 404) {
+                        // 未找到对应化学品
+                        this.error = `未找到中文名、外文名或CAS号为 '${this.identifier.trim()}' 的化学品`;
+                    } else {
+                        // 其他请求错误
+                        this.error = `请求失败，服务器返回状态码: ${response.status}`;
+                    }
+                } catch (err) {
+                    // 网络错误处理
+                    this.error = '网络错误，请检查您的网络连接';
+                    console.error('Error:', err);
+                } finally {
+                    // 无论成功或失败，都将加载状态设为false
+                    this.loading = false;
+                }
+            },
+
+            // 选择特定化学品查看详情
+            selectChemical(chemical) {
+                this.result = chemical; // 设置当前查看的化学品
+                this.qrCodeData = null; // 清除之前的二维码数据
+                // 自动生成二维码
+                this.generateQRCode();
+            },
+
+            // 返回首页
+            goHome() {
+                this.result = null;     // 清除查询结果
+                this.identifier = '';   // 清除搜索输入
+                this.qrCodeData = null; // 清除二维码数据
+                this.error = null;      // 清除错误信息
+            },
+
+            // 删除化学品
+            async deleteChemical(id) {
+                if (!confirm('确定要删除这个化学品吗？此操作不可恢复。')) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/chemical/${id}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (response.ok) {
+                        // 删除成功，刷新列表
+                        await this.loadAllChemicals();
+                        alert('化学品删除成功！');
+                    } else {
+                        const errorText = await response.text();
+                        this.error = `删除失败: ${errorText}`;
+                    }
+                } catch (err) {
+                    this.error = '网络错误，请检查您的网络连接';
+                    console.error('Error:', err);
+                }
+            },
+
+            // 异步生成二维码
+            async generateQRCode() {
+                this.qrLoading = true; // 设置二维码加载状态为true
+                this.qrCodeData = null; // 清除之前的二维码数据
+                this.error = null;      // 清除错误信息
+
+                try {
+                    // 调用后端API生成二维码
+                    const response = await fetch(`/api/chemical/qr/${this.result.id}`);
+
+                    if (response.ok) {
+                        // 请求成功，获取二维码数据
+                        const data = await response.json();
+                        this.qrCodeData = data.qrCode;
+                    } else if (response.status === 404) {
+                        // 未找到对应化学品
+                        this.error = `未找到ID为 '${this.result.id}' 的化学品`;
+                    } else {
+                        // 其他请求错误
+                        this.error = `请求失败，服务器返回状态码: ${response.status}`;
+                    }
+                } catch (err) {
+                    // 生成二维码错误处理
+                    this.error = '生成二维码时出错，请重试';
+                    console.error('Error:', err);
+                } finally {
+                    // 无论成功或失败，都将二维码加载状态设为false
+                    this.qrLoading = false;
+                }
+            },
+
+// ... existing code ...
+            printAllData() {
+                const printWindow = window.open('', '_blank');
+
+                // 构建适合100*150*325纸张规格的HTML内容
+                const labelContent = `
+        <div style="width: 100mm; height: 150mm; padding: 5mm; box-sizing: border-box; font-family: Arial, sans-serif; font-size: 8pt;">
+            <!-- 顶部：实验室logo和名称（作为标题） -->
+            <div style="display: flex; align-items: center; margin-bottom: 5mm;">
+                <!-- logo -->
+                <img src="/img/logo1.png" alt="实验室logo" style="width: 15mm; height: 15mm; margin-right: 5mm;">
+                <!-- 实验室名称 -->
+                <div>
+                    <div style="font-size: 10pt; font-weight: bold;">精准智能化学全国重点实验室</div>
+                    <div style="font-size: 8pt; color: #666;">STATE KEY LABORATORY OF PRECISION AND INTELLIGENT CHEMISTRY</div>
+                </div>
+            </div>
+
+            <!-- 中部：左侧为分子结构图和二维码（上下排列），右侧为化学品信息 -->
+            <div style="display: flex; justify-content: space-between; gap: 1mm;">
+                <!-- 左侧：分子结构图和二维码（上下排列） -->
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 1mm;">
+                    <!-- 分子结构图 -->
+                    <div style="text-align: center;">
+                        <img src="${this.result.molecularStructureImage}" onerror="this.src='/img/f1.png'" alt="分子结构图" style="width: 17mm; height: 17mm;">
+                    </div>
+                    <!-- 二维码 -->
+                    <div style="text-align: center;">
+                        ${this.qrCodeData ? `<img src="data:image/png;base64,${this.qrCodeData}" alt="二维码" style="width: 17mm; height: 17mm;">` : '<div>二维码生成中...</div>'}
+                        <div>药品编码: ${this.result.id}</div>
+                    </div>
+                </div>
+
+                <!-- 右侧：化学品信息 -->
+                <div style="flex: 1;">
+                    <div style="font-size: 9pt; font-weight: bold; margin-bottom: 2mm;">${this.result.englishName}</div>
+                    <div style="font-size: 9pt; font-weight: bold; margin-bottom: 2mm;">${this.result.name}</div>
+
+                      <!-- 化学品详细信息，每个字段标签和值在同一行 -->
+                    <div style="font-size: 9pt;">
+                        <div>CAS号: ${this.result.casNumber}</div>
+                        <div>浓度: ${this.result.concentration}</div>
+                        <div>规格: ${this.result.specification}</div>
+                        <div>分子量: ${this.result.weight}</div>
+                        <div>分子式: ${this.result.formula}</div>
+                        <div>储存条件：室温</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+                printWindow.document.write('<' + 'html>' +
+                    '<' + 'head>' +
+                    '<' + 'title>化学品信息' + '<' + '/title>' +
+                    '<' + 'style>' +
+                    'body {' +
+                    '    margin: 0;' +
+                    '    padding: 0;' +
+                    '    background: #fff;' +
+                    '}' +
+                    '@media print {' +
+                    '    body {' +
+                    '        print-color-adjust: exact;' +
+                    '        -webkit-print-color-adjust: exact;' +
+                    '    }' +
+                    '}' +
+                    '<' + '/style>' +
+                    '<' + '/head>' +
+                    '<' + 'body>' +
+                    labelContent +
+                    '<' + 'script>' +
+                    'window.onload = function() {' +
+                    '    window.print();' +
+                    '    setTimeout(function() {' +
+                    '        window.close();' +
+                    '    }, 1000);' +
+                    '}' +
+                    '<' + '/script>' +
+                    '<' + '/body>' +
+                    '<' + '/html>');
+                printWindow.document.close();
+            },
+
+            // 新增小尺寸打印功能
+            printAllDataSmall() {
+                const printWindow = window.open('', '_blank');
+
+                // 构建适合约40*30mm小标签的HTML内容，保持与标准尺寸相同的布局结构
+                const labelContent = `
+        <div style="width: 40mm; height: 30mm; padding: 2mm; box-sizing: border-box; font-family: Arial, sans-serif; font-size: 4pt;">
+            <!-- 顶部：实验室logo和名称（作为标题） -->
+            <div style="display: flex; align-items: center; margin-bottom: 0.5mm;">
+                <!-- logo -->
+                <img src="/img/logo1.png" alt="实验室logo" style="width: 6mm; height: 6mm; margin-right: 1mm;">
+                <!-- 实验室名称 -->
+                <div>
+                    <div style="font-size: 5pt; font-weight: bold;">精准智能化学全国重点实验室</div>
+                        <div style="font-size: 4pt; color: #666;">STATE KEY LABORATORY OF PRECISION AND INTELLIGENT CHEMISTRY</div>
+                </div>
+            </div>
+
+            <!-- 中部：左侧为分子结构图和二维码（上下排列），右侧为化学品信息 -->
+            <div style="display: flex; justify-content: space-between; gap: 1mm;">
+                <!-- 左侧：分子结构图和二维码（上下排列） -->
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.5mm;">
+                    <!-- 分子结构图 -->
+                    <div style="text-align: center;">
+                        <img src="${this.result.molecularStructureImage}" onerror="this.src='/img/f1.png'" alt="分子结构图" style="width: 12mm; height: 12mm;">
+                    </div>
+                    <!-- 二维码 -->
+                    <div style="text-align: center;">
+                        ${this.qrCodeData ? `<img src="data:image/png;base64,${this.qrCodeData}" alt="二维码" style="width: 12mm; height: 12mm;">` : '<div>二维码生成中...</div>'}
+                        <div>药品编码: ${this.result.id}</div>
+                    </div>
+                </div>
+
+                <!-- 右侧：化学品信息 -->
+                <div style="flex: 1;">
+                    <div style="font-size: 4.5pt; ">${this.result.englishName}</div>
+                    <div style="font-size: 4.5pt; ">${this.result.name}</div>
+
+                    <!-- 化学品详细信息，每个字段标签和值在同一行 -->
+                    <div style="font-size: 4.5pt;">
+                        <div>CAS号: ${this.result.casNumber}</div>
+                        <div>浓度: ${this.result.concentration}</div>
+                        <div>规格: ${this.result.specification}</div>
+                        <div>分子量: ${this.result.weight}</div>
+                        <div>分子式: ${this.result.formula}</div>
+                        <div>储存条件：室温</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+                printWindow.document.write('<' + 'html>' +
+                    '<' + 'head>' +
+                    '<' + 'title>化学品信息(小尺寸)' + '<' + '/title>' +
+                    '<' + 'style>' +
+                    'body {' +
+                    '    margin: 0;' +
+                    '    padding: 0;' +
+                    '    background: #fff;' +
+                    '}' +
+                    '@media print {' +
+                    '    body {' +
+                    '        print-color-adjust: exact;' +
+                    '        -webkit-print-color-adjust: exact;' +
+                    '    }' +
+                    '}' +
+                    '<' + '/style>' +
+                    '<' + '/head>' +
+                    '<' + 'body>' +
+                    labelContent +
+                    '<' + 'script>' +
+                    'window.onload = function() {' +
+                    '    window.print();' +
+                    '    setTimeout(function() {' +
+                    '        window.close();' +
+                    '    }, 1000);' +
+                    '}' +
+                    '<' + '/script>' +
+                    '<' + '/body>' +
+                    '<' + '/html>');
+                printWindow.document.close();
+            },
+
+            // 打印Logo
+            printLogo() {
+                const printWindow = window.open('', '_blank');
+
+                // 构建适合约40*30mm小标签的HTML内容，保持与标准尺寸相同的布局结构
+                const labelContent = `
+        <div style="width: 40mm; height: 30mm; padding: 2mm; box-sizing: border-box; font-family: Arial, sans-serif; font-size: 4pt;">
+            <!-- 顶部：实验室logo和名称（作为标题） -->
+            <div style="display: flex; align-items: center; margin-bottom: 0.5mm;">
+                <!-- logo -->
+                <img src="/img/logo1.png" alt="实验室logo" style="width: 6mm; height: 6mm; margin-right: 1mm;">
+                <!-- 实验室名称 -->
+                <div>
+                    <div style="font-size: 5pt; font-weight: bold;">精准智能化学全国重点实验室</div>
+                        <div style="font-size: 4pt; color: #666;">STATE KEY LABORATORY OF PRECISION AND INTELLIGENT CHEMISTRY</div>
+                </div>
+            </div>
+            </div>
+        </div>
+    `;
+                printWindow.document.write('<' + 'html>' +
+                    '<' + 'head>' +
+                    '<' + 'title>打印Logo' + '<' + '/title>' +
+                    '<' + 'style>' +
+                    'body {' +
+                    '    margin: 0;' +
+                    '    padding: 0;' +
+                    '    background: #fff;' +
+                    '}' +
+                    '@media print {' +
+                    '    body {' +
+                    '        print-color-adjust: exact;' +
+                    '        -webkit-print-color-adjust: exact;' +
+                    '    }' +
+                    '}' +
+                    '<' + '/style>' +
+                    '<' + '/head>' +
+                    '<' + 'body>' +
+                    labelContent +
+                    '<' + 'script>' +
+                    'window.onload = function() {' +
+                    '    window.print();' +
+                    '    setTimeout(function() {' +
+                    '        window.close();' +
+                    '    }, 1000);' +
+                    '}' +
+                    '<' + '/script>' +
+                    '<' + '/body>' +
+                    '<' + '/html>');
+                printWindow.document.close();
+            },
+
+
+            // 新增：只打印分子结构图的方法
+            printMolecularStructure() {
+                const printWindow = window.open('', '_blank');
+
+                // 构建适合40*30mm的分子结构图打印内容
+                const labelContent = `
+        <div style="width: 40mm; height: 30mm; padding: 2mm; box-sizing: border-box; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <!-- 分子结构图 -->
+            <div style="text-align: center;">
+                <img src="${this.result.molecularStructureImage}" onerror="this.src='/img/f1.png'" alt="分子结构图" style="width: 30mm; height: 20mm;">
+            </div>
+        </div>
+    `;
+
+                printWindow.document.write('<' + 'html>' +
+                    '<' + 'head>' +
+                    '<' + 'title>分子结构图' + '<' + '/title>' +
+                    '<' + 'style>' +
+                    'body {' +
+                    '    margin: 0;' +
+                    '    padding: 0;' +
+                    '    background: #fff;' +
+                    '}' +
+                    '@media print {' +
+                    '    body {' +
+                    '        print-color-adjust: exact;' +
+                    '        -webkit-print-color-adjust: exact;' +
+                    '    }' +
+                    '}' +
+                    '<' + '/style>' +
+                    '<' + '/head>' +
+                    '<' + 'body>' +
+                    labelContent +
+                    '<' + 'script>' +
+                    'window.onload = function() {' +
+                    '    window.print();' +
+                    '    setTimeout(function() {' +
+                    '        window.close();' +
+                    '    }, 1000);' +
+                    '}' +
+                    '<' + '/script>' +
+                    '<' + '/body>' +
+                    '<' + '/html>');
+                printWindow.document.close();
+            },
+
+
+            // 只打印二维码 - 适配100*150*325的纸张规格
+            printQRCode() {
+                // 创建一个用于打印的临时页面，只包含二维码
+                const printWindow = window.open('', '_blank');
+
+                // 构建适合100*150*325纸张规格的二维码内容
+                const qrContent = `        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100mm; height: 150mm; padding: 5mm; box-sizing: border-box;">
+            <!-- 二维码 -->
+            <div style="margin-bottom: 1mm;">
+                ${this.qrCodeData ? `<img src="data:image/png;base64,${this.qrCodeData}" style="width: 18mm; height: 18mm;">` : '<div>二维码生成中...</div>'}            </div>
+
+            <!-- 药品编码 -->
+            <div style="font-size: 9pt; color: #333; text-align: center;">
+                药品编码: ${this.result.id}            </div>
+        </div>
+    `;
+
+                printWindow.document.write('<' + 'html>' +
+                    '<' + 'head>' +
+                    '<' + 'title>化学品信息二维码' + '<' + '/title>' +
+                    '<' + 'style>' +
+                    'body {' +
+                    '    margin: 0;' +
+                    '    padding: 0;' +
+                    '    background: #fff;' +
+                    '    display: flex;' +
+                    '    justify-content: center;' +
+                    '    align-items: center;' +
+                    '    height: 100vh;' +
+                    '}' +
+                    '@media print {' +
+                    '    body {' +
+                    '        print-color-adjust: exact;' +
+                    '        -webkit-print-color-adjust: exact;' +
+                    '    }' +
+                    '}' +
+                    '<' + '/style>' +
+                    '<' + '/head>' +
+                    '<' + 'body>' +
+                    qrContent +
+                    '<' + 'script>' +
+                    'window.onload = function() {' +
+                    '    window.print();' +
+                    '    setTimeout(function() {' +
+                    '        window.close();' +
+                    '    }, 1000);' +
+                    '}' +
+                    '<' + '/script>' +
+                    '<' + '/body>' +
+                    '<' + '/html>');
+                printWindow.document.close();
+            }
+        }
+    }).mount('#app'); // 挂载Vue应用到id为'app'的元素上
+</script>
+</body>
+</html>
