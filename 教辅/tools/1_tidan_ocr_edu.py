@@ -40,6 +40,8 @@ def zip_directory(source_dir, zip_output_path):
                 file_paths.append((file_path, os.path.relpath(file_path, source_dir)))
         
         # 使用多线程写入文件
+        #max_workers=min(len(file_paths), mp.cpu_count())
+        #max_workers = min(len(file_paths), 4)  # 最大不超过4个线程，若仍存在线程阻塞，则改为2，继续往下降
         with ThreadPoolExecutor(max_workers=min(len(file_paths), mp.cpu_count())) as executor:
             def write_file(args):
                 file_path, arcname = args
