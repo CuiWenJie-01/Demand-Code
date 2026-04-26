@@ -1,0 +1,16 @@
+<?php
+$tokenList=Array
+	(
+	'1c17b11693cb5ec63859b091c5b9c1b2'=>Array
+		(
+		'id'=>0,
+		'expired'=>2544411528,
+		'add_time'=>1680497928
+		),
+	'833c5611862efcaa9955205ee96125e9'=>Array
+		(
+		'id'=>2,
+		'expired'=>1680584583,
+		'add_time'=>1680498183
+		)
+	);
