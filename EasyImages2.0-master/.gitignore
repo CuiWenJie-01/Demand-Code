@@ -1,0 +1,41 @@
+# 上传的图片存储目录（核心：不上传用户图片）
+i/
+!i/index.html
+!i/.htaccess
+!i/favicon.ico
+
+# 缓存文件
+i/cache/
+*.cache
+
+# 日志文件
+admin/logs/
+*.log
+
+# 配置文件（包含敏感信息）
+config/config.php
+config/config.guest.php
+config/config.manager.php
+config/api_key.php
+config/install.lock
+config/EasyIamge.lock
+
+# 安装向导（安装后应删除）
+install/
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+tmp/
+temp/
+*.tmp

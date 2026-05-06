@@ -36,3 +36,19 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# 化学品分子结构图（体积较大，不提交到Git）
+img/*.png
+!img/logo1.png
+!img/f1.png
+
+# 数据库配置文件（包含敏感信息）
+src/main/resources/application.properties
+
+# 日志文件
+*.log
+logs/
+
+# 系统文件
+Thumbs.db
+desktop.ini
