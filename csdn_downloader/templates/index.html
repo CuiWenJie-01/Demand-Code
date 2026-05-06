@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSDN 付费文章阅读器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 800px;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group input[type="text"]::placeholder {
+            color: #aaa;
+        }
+
+        .path-selector {
+            display: flex;
+            gap: 10px;
+        }
+
+        .path-selector input {
+            flex: 1;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        .result {
+            margin-top: 24px;
+            padding: 16px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result.success {
+            background: #e8f5e9;
+            border: 1px solid #4caf50;
+            color: #2e7d32;
+        }
+
+        .result.error {
+            background: #ffebee;
+            border: 1px solid #ef5350;
+            color: #c62828;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .preview-panel {
+            margin-top: 24px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .preview-panel.show {
+            display: block;
+        }
+
+        .preview-header {
+            background: #f5f5f5;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preview-header h3 {
+            font-size: 16px;
+            color: #333;
+        }
+
+        .preview-content {
+            padding: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            background: white;
+            line-height: 1.8;
+        }
+
+        .preview-content h1,
+        .preview-content h2,
+        .preview-content h3 {
+            margin: 16px 0 8px;
+            color: #333;
+        }
+
+        .preview-content p {
+            margin: 8px 0;
+            color: #555;
+        }
+
+        .preview-content code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: "Consolas", monospace;
+        }
+
+        .preview-content pre {
+            background: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+
+        .preview-content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .preview-content img {
+            max-width: 100%;
+            border-radius: 8px;
+        }
+
+        .preview-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 16px;
+            margin: 16px 0;
+            color: #666;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .tips {
+            margin-top: 20px;
+            padding: 12px 16px;
+            background: #fff3e0;
+            border-radius: 8px;
+            border-left: 4px solid #ff9800;
+        }
+
+        .tips h4 {
+            font-size: 14px;
+            color: #e65100;
+            margin-bottom: 6px;
+        }
+
+        .tips ul {
+            margin-left: 18px;
+            font-size: 13px;
+            color: #bf360c;
+        }
+
+        .tips li {
+            margin: 4px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CSDN 付费文章阅读器</h1>
+            <p>输入文章 URL，一键获取完整内容并保存为 Markdown</p>
+        </div>
+
+        <div class="form-group">
+            <label for="articleUrl">CSDN 文章链接</label>
+            <input type="text" id="articleUrl" placeholder="https://blog.csdn.net/用户名/article/details/文章ID">
+        </div>
+
+        <div class="form-group">
+            <label for="savePath">保存路径</label>
+            <div class="path-selector">
+                <input type="text" id="savePath" placeholder="默认: ~/Downloads/CSDN_Articles">
+                <button class="btn btn-secondary" onclick="selectFolder()">选择文件夹</button>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button class="btn btn-primary" onclick="previewArticle()">预览文章</button>
+            <button class="btn btn-primary" onclick="downloadArticle()">下载保存</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>正在获取文章，请稍候...</p>
+        </div>
+
+        <div class="result" id="result"></div>
+
+        <div class="preview-panel" id="previewPanel">
+            <div class="preview-header">
+                <h3 id="previewTitle">文章预览</h3>
+            </div>
+            <div class="preview-content" id="previewContent"></div>
+        </div>
+
+        <div class="tips">
+            <h4>使用提示</h4>
+            <ul>
+                <li>支持格式: https://blog.csdn.net/用户名/article/details/文章ID</li>
+                <li>程序会自动尝试多种方式获取付费内容</li>
+                <li>保存的文件为 Markdown 格式，可用 VS Code / Typora 打开</li>
+                <li>图片链接会保留，在支持网络的环境中可正常显示</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // 设置默认保存路径
+        async function setDefaultPath() {
+            try {
+                const response = await fetch('/api/default_path');
+                const data = await response.json();
+                if (data.path) {
+                    document.getElementById('savePath').placeholder = `默认: ${data.path}`;
+                }
+            } catch (e) {
+                console.log('获取默认路径失败');
+            }
+        }
+        setDefaultPath();
+
+        function showLoading(show) {
+            document.getElementById('loading').classList.toggle('show', show);
+        }
+
+        function showResult(message, isSuccess) {
+            const result = document.getElementById('result');
+            result.textContent = message;
+            result.className = 'result ' + (isSuccess ? 'success' : 'error') + ' show';
+        }
+
+        function hideResult() {
+            document.getElementById('result').classList.remove('show');
+        }
+
+        async function selectFolder() {
+            try {
+                const response = await fetch('/api/select_folder');
+                const data = await response.json();
+                if (data.success && data.path) {
+                    document.getElementById('savePath').value = data.path;
+                }
+            } catch (e) {
+                showResult('打开文件夹选择器失败: ' + e.message, false);
+            }
+        }
+
+        async function previewArticle() {
+            const url = document.getElementById('articleUrl').value.trim();
+            if (!url) {
+                showResult('请输入文章 URL', false);
+                return;
+            }
+
+            hideResult();
+            showLoading(true);
+            document.getElementById('previewPanel').classList.remove('show');
+
+            try {
+                const response = await fetch('/api/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const data = await response.json();
+
+                showLoading(false);
+
+                if (data.success) {
+                    document.getElementById('previewTitle').textContent = data.title || '文章预览';
+                    document.getElementById('previewContent').innerHTML = markdownToHtml(data.content);
+                    document.getElementById('previewPanel').classList.add('show');
+                    showResult('预览加载成功', true);
+                } else {
+                    showResult(data.message || '预览失败', false);
+                }
+            } catch (e) {
+                showLoading(false);
+                showResult('请求失败: ' + e.message, false);
+            }
+        }
+
+        async function downloadArticle() {
+            const url = document.getElementById('articleUrl').value.trim();
+            const saveDir = document.getElementById('savePath').value.trim();
+
+            if (!url) {
+                showResult('请输入文章 URL', false);
+                return;
+            }
+
+            hideResult();
+            showLoading(true);
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, save_dir: saveDir })
+                });
+                const data = await response.json();
+
+                showLoading(false);
+
+                if (data.success) {
+                    showResult(`文章已保存: ${data.filepath}`, true);
+                } else {
+                    showResult(data.message || '下载失败', false);
+                }
+            } catch (e) {
+                showLoading(false);
+                showResult('请求失败: ' + e.message, false);
+            }
+        }
+
+        // 简单的 Markdown 转 HTML（用于预览）
+        function markdownToHtml(md) {
+            if (!md) return '';
+
+            return md
+                // 代码块
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                // 标题
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                // 粗体
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // 斜体
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                // 图片
+                .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1">')
+                // 链接
+                .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>')
+                // 引用
+                .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
+                // 行内代码
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                // 段落
+                .replace(/\n\n/g, '</p><p>')
+                // 换行
+                .replace(/\n/g, '<br>');
+        }
+
+        // 回车键触发下载
+        document.getElementById('articleUrl').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                downloadArticle();
+            }
+        });
+    </script>
+</body>
+</html>
