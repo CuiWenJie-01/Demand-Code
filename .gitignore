@@ -1,0 +1,16 @@
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+*.vsix
+out/
+.vscode-test/
+.idea/
+*.swp
+*.swo
+*.bak

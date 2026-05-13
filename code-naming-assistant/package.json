@@ -1,0 +1,124 @@
+{
+  "name": "code-naming-assistant",
+  "displayName": "Code Naming Assistant - 智能代码命名助手",
+  "description": "基于 Ollama 的智能代码命名助手，中文转英文工程命名，支持项目/目录/文件/变量/函数/类命名",
+  "version": "1.0.0",
+  "publisher": "your-publisher-id",
+  "author": {
+    "name": "Your Name"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/code-naming-assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/code-naming-assistant/issues"
+  },
+  "homepage": "https://github.com/your-username/code-naming-assistant#readme",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Snippets",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "naming",
+    "translate",
+    "chinese",
+    "ollama",
+    "rename",
+    "code style",
+    "变量命名",
+    "翻译",
+    "人工智能",
+    "AI"
+  ],
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1e81b0",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "onCommand:codeNamingAssistant.translateNaming"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeNamingAssistant.translateNaming",
+        "title": "智能命名翻译",
+        "category": "Naming Assistant"
+      },
+      {
+        "command": "codeNamingAssistant.renameFile",
+        "title": "重命名为规范英文",
+        "category": "Naming Assistant"
+      },
+      {
+        "command": "codeNamingAssistant.renameSymbol",
+        "title": "重命名符号为规范英文",
+        "category": "Naming Assistant"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "codeNamingAssistant.renameFile",
+          "when": "explorerResourceIsFile || explorerResourceIsFolder",
+          "group": "2_workspace@5"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "codeNamingAssistant.renameSymbol",
+          "when": "editorHasSelection",
+          "group": "1_modification@5"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "codeNamingAssistant.translateNaming",
+        "key": "alt+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Code Naming Assistant",
+      "properties": {
+        "codeNamingAssistant.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "Ollama 服务地址"
+        },
+        "codeNamingAssistant.model": {
+          "type": "string",
+          "default": "gemma3:4b-it-qat",
+          "description": "Ollama 模型名称"
+        },
+        "codeNamingAssistant.defaultScene": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "project", "directory", "file", "variable", "function", "class", "constant"],
+          "description": "默认命名场景（auto为自动检测）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^5.0.0"
+  }
+}

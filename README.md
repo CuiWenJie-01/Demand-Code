@@ -10,6 +10,7 @@
 | [EasyImages2.0-master](EasyImages2.0-master/) | 开源图床程序，支持多文件上传、无数据库部署 | PHP |
 | [ChemicalApi](ChemicalApi/) | 化学品信息管理系统，支持查询、二维码生成与图片管理 | Java/Spring Boot |
 | [csdn_downloader](csdn_downloader/) | CSDN 付费文章阅读器，支持多策略获取完整内容并保存为 Markdown | Python |
+| [code-naming-assistant](code-naming-assistant/) | VSCode 智能代码命名助手，基于 Ollama 将中文翻译为规范英文命名 | TypeScript |
 
 ## 项目详情
 
@@ -44,6 +45,15 @@
 - **核心能力**: 多策略获取文章（Markdown API、文章详情 API、read 模式、页面抓取）、HTML 转 Markdown、代码块与图片保留
 - **适用场景**: CSDN 文章离线阅读、付费内容获取、知识整理归档
 - **详见**: [csdn_downloader/README.md](csdn_downloader/README.md)
+
+### Code Naming Assistant 智能代码命名助手
+
+基于 Ollama 本地大模型的 VSCode 插件，将中文描述翻译为符合工程规范的英文命名。
+
+- **核心能力**: 中文→英文翻译、支持7种命名场景（项目/目录/文件/变量/函数/类/常量）、自动应用命名规范、右键重命名、快捷键支持
+- **适用场景**: 代码命名困难、团队统一命名规范、提升代码可读性
+- **技术亮点**: 完全本地运行（保护隐私）、智能场景识别、缩写白名单优化
+- **详见**: [code-naming-assistant/README.md](code-naming-assistant/README.md)
 
 ## 仓库说明
 
