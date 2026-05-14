@@ -48,11 +48,19 @@
 
 ### Code Naming Assistant 智能代码命名助手
 
+[![VSCode Marketplace](https://img.shields.io/visual-studio-marketplace/v/cuiwj.code-naming-assistant?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/cuiwj.code-naming-assistant?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
+
 基于 Ollama 本地大模型的 VSCode 插件，将中文描述翻译为符合工程规范的英文命名。
+
+| VSCode 扩展市场 | Marketplace 网页版 |
+|----------------|-------------------|
+| ![VSCode 扩展市场截图](code-naming-assistant/images/marketplace-vscode.png) | ![Marketplace 网页版截图](code-naming-assistant/images/marketplace-web.png) |
 
 - **核心能力**: 中文→英文翻译、支持7种命名场景（项目/目录/文件/变量/函数/类/常量）、自动应用命名规范、右键重命名、快捷键支持
 - **适用场景**: 代码命名困难、团队统一命名规范、提升代码可读性
 - **技术亮点**: 完全本地运行（保护隐私）、智能场景识别、缩写白名单优化
+- **VSCode 市场**: [code-naming-assistant](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
 - **详见**: [code-naming-assistant/README.md](code-naming-assistant/README.md)
 
 ## 仓库说明

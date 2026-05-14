@@ -2,6 +2,15 @@
 
 智能代码命名助手 —— 基于本地 Ollama 大模型，将中文描述翻译成符合工程规范的英文命名。
 
+[![VSCode Marketplace](https://img.shields.io/visual-studio-marketplace/v/cuiwj.code-naming-assistant?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/cuiwj.code-naming-assistant?style=for-the-badge)](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
+
+## 插件展示
+
+| VSCode 扩展市场 | Marketplace 网页版 |
+|----------------|-------------------|
+| ![VSCode 扩展市场截图](images/marketplace-vscode.png) | ![Marketplace 网页版截图](images/marketplace-web.png) |
+
 ## 功能特性
 
 - 7 种命名场景：项目名、目录名、文件名、变量名、函数名、类名、常量名
