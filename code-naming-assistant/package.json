@@ -3,19 +3,19 @@
   "displayName": "Code Naming Assistant - 智能代码命名助手",
   "description": "基于 Ollama 的智能代码命名助手，中文转英文工程命名，支持项目/目录/文件/变量/函数/类命名",
   "version": "1.0.0",
-  "publisher": "your-publisher-id",
+  "publisher": "cuiwj",
   "author": {
-    "name": "Your Name"
+    "name": "cuiwj"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/code-naming-assistant.git"
+    "url": "https://github.com/CuiWenJie-01/Demand-Code"
   },
   "bugs": {
-    "url": "https://github.com/your-username/code-naming-assistant/issues"
+    "url": "https://github.com/CuiWenJie-01/Demand-Code/issues"
   },
-  "homepage": "https://github.com/your-username/code-naming-assistant#readme",
+  "homepage": "https://github.com/CuiWenJie-01/Demand-Code/tree/main/code-naming-assistant#readme",
   "engines": {
     "vscode": "^1.74.0"
   },
