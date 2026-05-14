@@ -1,16 +1,40 @@
+# Dependencies
 node_modules/
 __pycache__/
 *.pyc
 *.pyo
 .Python
-.vscode/
-*.log
-.DS_Store
-Thumbs.db
-*.vsix
+
+# Build outputs
 out/
-.vscode-test/
+dist/
+build/
+*.vsix
+
+# IDE
+.vscode/
 .idea/
 *.swp
 *.swo
+
+# Logs and temp
+*.log
+*.tmp
 *.bak
+.DS_Store
+Thumbs.db
+
+# OS
+*.dll
+*.exe
+*.obj
+*.lib
+*.pdb
+
+# VSCode extension specific
+.vscode-test/
+*.map
+*.tsbuildinfo
+
+# Git
+.git/

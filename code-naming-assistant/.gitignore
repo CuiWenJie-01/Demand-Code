@@ -1,7 +1,17 @@
+# Dependencies
 node_modules/
+
+# Build outputs
 out/
-.vscode-test/
+dist/
 *.vsix
+
+# IDE
+.vscode/
+.vscode-test/
+*.map
+
+# Logs and temp
 *.log
 .DS_Store
 Thumbs.db
