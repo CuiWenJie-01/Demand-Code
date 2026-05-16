@@ -1,6 +1,5 @@
 .vscode/**
 .vscode-test/**
-src/**
 node_modules/**
 .git/**
 .gitignore
@@ -11,3 +10,6 @@ tsconfig.json
 **/*.map
 **/*.ts
 LICENSE
+package-lock.json
+images/**
+operation.md
