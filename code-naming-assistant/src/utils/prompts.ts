@@ -18,9 +18,13 @@ const SCENE_RULES: Record<NamingScene, string> = {
 
     directory: `目录/文件夹名（Directory）
 - 风格：snake_case，全小写，单词间用下划线"_"分隔
-- 序号：数字用两位（01_, 02_），不要无意义的单词如chapter
+- 章节号提取：从输入中提取数字部分，如"3.2"变成"03.2"，"3."变成"03"，"第5章"变成"05"
+- 序号格式：整数部分用两位数字（01, 02），如果只有小数点没有小数部分则只保留整数
+- 如果输入完全没有数字（如"线性回归"），不要添加数字前缀
+- 精炼原则：优先使用缩写白名单（neural network→nn整体缩写），去除冗余词汇
+- 长度控制：目录名尽量控制在2-4个单词
 - 特殊目录：common, utils, config, scripts, data, tests
-- 示例：01_data_prep, 02_models, 03_training, common, tests`,
+- 示例：3.2线性回归 -> 03.2_lin_reg, 3.神经网络 -> 03_nn, 线性回归 -> lin_reg`,
 
     file: `文件名（File）
 - Python文件：snake_case.py，全小写+下划线，无冗余前缀
