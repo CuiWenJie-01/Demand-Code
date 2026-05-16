@@ -3,6 +3,7 @@ import * as path from 'path';
 import { OllamaClient } from '../providers/ollamaClient';
 import { NamingScene, SCENE_LABELS, buildPrompt } from '../utils/prompts';
 import { cleanModelOutput, formatByCase } from '../providers/namingFormatter';
+import { extractChapterNumber, formatDirectoryName } from '../utils/chapterExtractor';
 
 export async function renameFileCommand(uri: vscode.Uri): Promise<void> {
     const config = vscode.workspace.getConfiguration('codeNamingAssistant');
@@ -43,6 +44,7 @@ export async function renameFileCommand(uri: vscode.Uri): Promise<void> {
     }
 
     const textToTranslate = input.trim() || oldName;
+    const { number: chapterNum, remaining: textWithoutNum } = extractChapterNumber(textToTranslate);
 
     await vscode.window.withProgress(
         {
@@ -52,7 +54,7 @@ export async function renameFileCommand(uri: vscode.Uri): Promise<void> {
         },
         async () => {
             try {
-                const prompt = buildPrompt(scene, textToTranslate);
+                const prompt = buildPrompt(scene, textWithoutNum || textToTranslate);
                 const rawResult = await client.generate(prompt);
                 const cleanedResult = cleanModelOutput(rawResult);
 
@@ -61,6 +63,10 @@ export async function renameFileCommand(uri: vscode.Uri): Promise<void> {
                     finalResult = formatByCase(cleanedResult, 'kebab');
                 } else if (scene === 'directory' || scene === 'file') {
                     finalResult = formatByCase(cleanedResult, 'snake');
+                }
+
+                if (scene === 'directory') {
+                    finalResult = formatDirectoryName(chapterNum, finalResult);
                 }
 
                 if (!isDirectory && scene === 'file') {

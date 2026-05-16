@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { OllamaClient } from '../providers/ollamaClient';
 import { NamingScene, SCENE_LABELS, buildPrompt } from '../utils/prompts';
 import { cleanModelOutput, formatByCase, NamingCase } from '../providers/namingFormatter';
+import { extractChapterNumber, formatDirectoryName } from '../utils/chapterExtractor';
 
 export async function translateNamingCommand(context: vscode.ExtensionContext): Promise<void> {
     const config = vscode.workspace.getConfiguration('codeNamingAssistant');
@@ -31,6 +32,8 @@ export async function translateNamingCommand(context: vscode.ExtensionContext): 
     if (!input || input.trim().length === 0) {
         return;
     }
+
+    const { number: chapterNum, remaining: textWithoutNum } = extractChapterNumber(input.trim());
 
     const sceneOptions: { label: string; scene: NamingScene }[] = [
         { label: '$(file-directory) 项目名 (kebab-case)', scene: 'project' },
@@ -71,7 +74,7 @@ export async function translateNamingCommand(context: vscode.ExtensionContext): 
         },
         async () => {
             try {
-                const prompt = buildPrompt(selectedScene!, input.trim());
+                const prompt = buildPrompt(selectedScene!, textWithoutNum || input.trim());
                 const rawResult = await client.generate(prompt);
                 const cleanedResult = cleanModelOutput(rawResult);
 
@@ -92,6 +95,10 @@ export async function translateNamingCommand(context: vscode.ExtensionContext): 
                     case 'constant':
                         finalResult = formatByCase(cleanedResult, 'upper_snake');
                         break;
+                }
+
+                if (selectedScene === 'directory') {
+                    finalResult = formatDirectoryName(chapterNum, finalResult);
                 }
 
                 const copyAction = await vscode.window.showInformationMessage(

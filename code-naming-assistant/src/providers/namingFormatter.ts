@@ -67,5 +67,12 @@ export function cleanModelOutput(raw: string): string {
         }
     }
 
-    return cleaned.trim();
+    cleaned = cleaned.trim();
+
+    cleaned = cleaned.replace(/[\\/:*?"<>|]/g, '_');
+    cleaned = cleaned.replace(/\s+/g, '_');
+    cleaned = cleaned.replace(/_+/g, '_');
+    cleaned = cleaned.replace(/^_+|_+$/g, '');
+
+    return cleaned;
 }
