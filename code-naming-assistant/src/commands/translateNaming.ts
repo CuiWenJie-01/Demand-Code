@@ -74,7 +74,7 @@ export async function translateNamingCommand(context: vscode.ExtensionContext): 
         },
         async () => {
             try {
-                const prompt = buildPrompt(selectedScene!, textWithoutNum || input.trim());
+                const prompt = buildPrompt(selectedScene!, input.trim(), textWithoutNum || input.trim());
                 const rawResult = await client.generate(prompt);
                 const cleanedResult = cleanModelOutput(rawResult);
 

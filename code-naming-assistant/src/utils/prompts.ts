@@ -117,7 +117,7 @@ current → curr
 previous → prev
 initialize/initial → init`;
 
-export function buildPrompt(scene: NamingScene, chineseText: string): string {
+export function buildPrompt(scene: NamingScene, originalText: string, chineseText: string): string {
     const sceneRule = SCENE_RULES[scene];
     return `你是一位专业的代码命名顾问，追求既能"一眼看懂"又能"短小精悍"的命名风格。请将以下中文描述翻译成符合软件工程规范的英文命名。
 
@@ -143,13 +143,29 @@ ${ABBREVIATION_LIST}
 - 模块私有/内部使用加单下划线前缀：_internal_helper, _private_var
 - 若名称与Python内置函数冲突，加尾随下划线：class_, input_
 
+【重要区分原则】：
+- 不同的中文描述必须生成不同的英文命名，即使它们含义相近
+- 要保留能区分语义差异的关键词，不能过度简化
+- "从零开始实现" → from_scratch / scratch_impl / raw_impl
+- "简洁实现" → concise / concise_impl / simple_impl
+- "高级实现" → advanced / advanced_impl
+- "优化版本" → opt / optimized
+- 示例：
+  "3.2. 线性回归的从零开始实现" → 03.2_lin_reg_scratch
+  "3.3. 线性回归的简洁实现" → 03.3_lin_reg_concise
+  "3.4. 线性回归的高级实现" → 03.4_lin_reg_advanced
+
 【要求】：
 1. 只返回最终的英文命名，不要任何解释、说明、注释
 2. 如果输入已经是英文，直接按当前场景的规范格式化
 3. 确保输出严格符合上述命名规范的风格
 4. 输出必须是纯文本，不要加引号、代码块或其他格式
+5. 必须保留语义差异，不同输入不能输出相同结果
 
-【中文描述】：
+【原始完整描述】（含序号，供参考上下文）：
+${originalText}
+
+【中文描述】（用于生成命名）：
 ${chineseText}
 
 【输出】：`;

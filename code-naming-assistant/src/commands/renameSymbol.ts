@@ -82,7 +82,7 @@ export async function renameSymbolCommand(): Promise<void> {
         },
         async () => {
             try {
-                const prompt = buildPrompt(selectedScene, textToTranslate);
+                const prompt = buildPrompt(selectedScene, textToTranslate, textToTranslate);
                 const rawResult = await client.generate(prompt);
                 const cleanedResult = cleanModelOutput(rawResult);
 

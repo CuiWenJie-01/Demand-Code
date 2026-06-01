@@ -54,7 +54,7 @@ export async function renameFileCommand(uri: vscode.Uri): Promise<void> {
         },
         async () => {
             try {
-                const prompt = buildPrompt(scene, textWithoutNum || textToTranslate);
+                const prompt = buildPrompt(scene, textToTranslate, textWithoutNum || textToTranslate);
                 const rawResult = await client.generate(prompt);
                 const cleanedResult = cleanModelOutput(rawResult);
 
