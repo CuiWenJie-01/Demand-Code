@@ -11,6 +11,7 @@
 | [ChemicalApi](ChemicalApi/) | 化学品信息管理系统，支持查询、二维码生成与图片管理 | Java/Spring Boot |
 | [csdn_downloader](csdn_downloader/) | CSDN 付费文章阅读器，支持多策略获取完整内容并保存为 Markdown | Python |
 | [code-naming-assistant](code-naming-assistant/) | VSCode 智能代码命名助手，基于 Ollama 将中文翻译为规范英文命名 | TypeScript |
+| [auto-github-contributor](auto-github-contributor/) | Claude Code 自动化 GitHub 贡献流水线，端到端驱动 issue 发现、开发、PR 提交 | Shell/Bash |
 
 ## 项目详情
 
@@ -62,6 +63,15 @@
 - **技术亮点**: 完全本地运行（保护隐私）、智能场景识别、缩写白名单优化
 - **VSCode 市场**: [code-naming-assistant](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
 - **详见**: [code-naming-assistant/README.md](code-naming-assistant/README.md)
+
+### auto-github-contributor 自动化 GitHub 贡献工具
+
+一个 Claude Code Skill + Slash Command，面向任意 GitHub 仓库提供端到端的开源贡献流水线：自动发现 issue / 快速修复点，执行 TDD 开发循环，最终通过 `gh` 命令自动提交 PR。
+
+- **核心能力**: 自动发现候选 issue、仓库快速修复扫描（拼写/测试/i18n/TODO）、TDD 开发循环、自动提交 PR
+- **适用场景**: 开源贡献自动化、快速修复低门槛 issue、批量规范化改进
+- **技术亮点**: 11 步交互式剧本、安全护栏（禁止强制推送/主分支提交）、多语言包管理器自动识别、环境变量全配置
+- **详见**: [auto-github-contributor/README.md](auto-github-contributor/README.md)
 
 ## 仓库说明
 
