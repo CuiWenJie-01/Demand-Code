@@ -4,14 +4,13 @@
 
 ## 项目概览
 
-| 项目名称 | 说明 | 技术栈 |
-|---------|------|--------|
-| [教辅](教辅/) | 教辅图书数据处理工具集，面向 LLM 训练数据的预处理、质检与格式化流水线 | Python |
-| [EasyImages2.0-master](EasyImages2.0-master/) | 开源图床程序，支持多文件上传、无数据库部署 | PHP |
-| [ChemicalApi](ChemicalApi/) | 化学品信息管理系统，支持查询、二维码生成与图片管理 | Java/Spring Boot |
-| [csdn_downloader](csdn_downloader/) | CSDN 付费文章阅读器，支持多策略获取完整内容并保存为 Markdown | Python |
-| [code-naming-assistant](code-naming-assistant/) | VSCode 智能代码命名助手，基于 Ollama 将中文翻译为规范英文命名 | TypeScript |
-| [auto-github-contributor](auto-github-contributor/) | Claude Code 自动化 GitHub 贡献流水线，端到端驱动 issue 发现、开发、PR 提交 | Shell/Bash |
+| 项目名称                                            | 说明                                     | 技术栈              |
+| ----------------------------------------------- | -------------------------------------- | ---------------- |
+| [教辅](教辅/)                                       | 教辅图书数据处理工具集，面向 LLM 训练数据的预处理、质检与格式化流水线  | Python           |
+| [EasyImages2.0-master](EasyImages2.0-master/)   | 开源图床程序，支持多文件上传、无数据库部署                  | PHP              |
+| [ChemicalApi](ChemicalApi/)                     | 化学品信息管理系统，支持查询、二维码生成与图片管理              | Java/Spring Boot |
+| [csdn\_downloader](csdn_downloader/)            | CSDN 付费文章阅读器，支持多策略获取完整内容并保存为 Markdown  | Python           |
+| [code-naming-assistant](code-naming-assistant/) | VSCode 智能代码命名助手，基于 Ollama 将中文翻译为规范英文命名 | TypeScript       |
 
 ## 项目详情
 
@@ -39,13 +38,13 @@
 - **适用场景**: 实验室化学品库存管理、化学品信息查询
 - **详见**: [ChemicalApi/README.md](ChemicalApi/README.md)
 
-### csdn_downloader CSDN 付费文章阅读器
+### csdn\_downloader CSDN 付费文章阅读器
 
 支持通过多种接口获取 CSDN 文章完整内容（包括付费部分），并保存为 Markdown 格式。提供 PyQt6 桌面客户端、Flask Web 版和命令行版三种使用方式。
 
 - **核心能力**: 多策略获取文章（Markdown API、文章详情 API、read 模式、页面抓取）、HTML 转 Markdown、代码块与图片保留
 - **适用场景**: CSDN 文章离线阅读、付费内容获取、知识整理归档
-- **详见**: [csdn_downloader/README.md](csdn_downloader/README.md)
+- **详见**: [csdn\_downloader/README.md](csdn_downloader/README.md)
 
 ### Code Naming Assistant 智能代码命名助手
 
@@ -54,8 +53,8 @@
 
 基于 Ollama 本地大模型的 VSCode 插件，将中文描述翻译为符合工程规范的英文命名。
 
-| VSCode 扩展市场 | Marketplace 网页版 |
-|----------------|-------------------|
+| VSCode 扩展市场                                                           | Marketplace 网页版                                                        |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | ![VSCode 扩展市场截图](code-naming-assistant/images/marketplace-vscode.png) | ![Marketplace 网页版截图](code-naming-assistant/images/marketplace-web.png) |
 
 - **核心能力**: 中文→英文翻译、支持7种命名场景（项目/目录/文件/变量/函数/类/常量）、自动应用命名规范、右键重命名、快捷键支持
@@ -64,17 +63,11 @@
 - **VSCode 市场**: [code-naming-assistant](https://marketplace.visualstudio.com/items?itemName=cuiwj.code-naming-assistant)
 - **详见**: [code-naming-assistant/README.md](code-naming-assistant/README.md)
 
-### auto-github-contributor 自动化 GitHub 贡献工具
-
-一个 Claude Code Skill + Slash Command，面向任意 GitHub 仓库提供端到端的开源贡献流水线：自动发现 issue / 快速修复点，执行 TDD 开发循环，最终通过 `gh` 命令自动提交 PR。
-
-- **核心能力**: 自动发现候选 issue、仓库快速修复扫描（拼写/测试/i18n/TODO）、TDD 开发循环、自动提交 PR
-- **适用场景**: 开源贡献自动化、快速修复低门槛 issue、批量规范化改进
-- **技术亮点**: 11 步交互式剧本、安全护栏（禁止强制推送/主分支提交）、多语言包管理器自动识别、环境变量全配置
-- **详见**: [auto-github-contributor/README.md](auto-github-contributor/README.md)
+  <br />
 
 ## 仓库说明
 
 - 部分项目包含大量原始数据文件（如教辅图片），已通过 `.gitignore` 排除，避免仓库体积过大
 - 各子项目均有独立的 README 和 `.gitignore` 配置
 - 代码按项目分类存放，方便独立维护与使用
+
