@@ -10,6 +10,7 @@ CSDN 付费文章阅读器
 import os
 import re
 import sys
+import json
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -32,13 +33,33 @@ class CsdnArticleReader:
             "Accept-Language": "zh-CN,zh;q=0.9",
         })
         self.timeout = 15
+        self._load_cookie()
+
+    def _load_cookie(self):
+        """加载 CSDN 登录 Cookie，用于获取付费全文
+
+        优先级: 环境变量 CSDN_COOKIE > 程序同目录 cookie.txt
+        """
+        cookie = os.environ.get("CSDN_COOKIE", "").strip()
+        if not cookie:
+            cookie_file = Path(__file__).resolve().with_name("cookie.txt")
+            if cookie_file.exists():
+                cookie = cookie_file.read_text(encoding="utf-8").strip()
+        if cookie:
+            self.session.headers["Cookie"] = cookie
 
     def read_article(self, article_url: str):
         """读取文章主入口"""
+        # CSDN 文库链接走专门的解析逻辑
+        if self._is_wenku_url(article_url):
+            self._read_wenku_article(article_url)
+            return
+
         article_id = self._extract_article_id(article_url)
         if not article_id:
             print("[FAIL] 无法解析文章ID，请检查 URL 格式是否正确")
-            print("       正确格式: https://blog.csdn.net/用户名/article/details/文章ID")
+            print("       博客格式: https://blog.csdn.net/用户名/article/details/文章ID")
+            print("       文库格式: https://wenku.csdn.net/column/文档ID")
             return
 
         print(f"[*] 正在获取文章 ID: {article_id} ...")
@@ -84,6 +105,111 @@ class CsdnArticleReader:
         """从 URL 中提取文章 ID"""
         match = re.search(r"/details/(\d+)", url)
         return match.group(1) if match else None
+
+    def _is_wenku_url(self, url: str) -> bool:
+        """判断是否为 CSDN 文库链接 (wenku.csdn.net)"""
+        try:
+            return urlparse(url).netloc.endswith("wenku.csdn.net")
+        except Exception:
+            return False
+
+    def _extract_wenku_id(self, url: str) -> str:
+        """从文库 URL 路径中提取文档 ID"""
+        parts = [p for p in urlparse(url).path.split("/") if p]
+        return parts[-1] if parts else "unknown"
+
+    def _fetch_wenku_article(self, article_url: str) -> dict | None:
+        """抓取 CSDN 文库页面，返回 {"title", "content", "is_md", "is_full"}
+
+        文库页面有风控，需要带完整浏览器请求头才能拿到 200 响应。
+        全文受登录态控制: 登录 VIP 账号后，服务端会在
+        __INITIAL_STATE__.pageData.detailInfo.viewContent 中返回完整 Markdown；
+        未登录/非 VIP 时该字段只有预览部分 (isShowAll=False)。
+        """
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/139.0.0.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                "image/avif,image/webp,image/apng,*/*;q=0.8"
+            ),
+            "Referer": "https://wenku.csdn.net/",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        try:
+            resp = self.session.get(article_url, timeout=self.timeout, headers=headers)
+            if resp.status_code != 200:
+                return None
+            html = resp.text
+
+            # 优先解析 SSR 状态数据 (viewContent 已是 Markdown 格式)
+            m = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*)", html, re.S)
+            if m:
+                try:
+                    state, _ = json.JSONDecoder().raw_decode(m.group(1))
+                    detail = state.get("pageData", {}).get("detailInfo", {}) or {}
+                    content = detail.get("viewContent") or ""
+                    if len(content) > 100:
+                        return {
+                            "title": detail.get("title"),
+                            "content": content,
+                            "is_md": True,
+                            "is_full": bool(detail.get("isShowAll")),
+                        }
+                except Exception:
+                    pass
+
+            # 兜底: 从 DOM 中提取正文 HTML
+            soup = BeautifulSoup(html, "html.parser")
+
+            title = None
+            title_tag = soup.find("title")
+            if title_tag:
+                title = title_tag.get_text(strip=True).replace("- CSDN文库", "").strip()
+
+            selectors = [
+                "div#copyRef.content-view",
+                "div.markdown_views",
+                "div.htmledit_views",
+                "div.article-box div.cont",
+                "div#chatgpt-article-detail",
+            ]
+            for sel in selectors:
+                div = soup.select_one(sel)
+                if div and len(div.get_text(strip=True)) > 100:
+                    return {"title": title, "content": str(div), "is_md": False, "is_full": False}
+            return None
+        except Exception:
+            return None
+
+    def _read_wenku_article(self, article_url: str):
+        """读取 CSDN 文库文章"""
+        doc_id = self._extract_wenku_id(article_url)
+        print(f"[*] 检测到 CSDN 文库链接，正在获取文档: {doc_id} ...")
+
+        info = self._fetch_wenku_article(article_url)
+        if not info or not info["content"]:
+            print("[FAIL] 未能获取到文库文章内容，可能文档不存在、需要会员权限或被风控拦截")
+            return
+
+        if info["is_md"]:
+            md = info["content"]
+        else:
+            md = self._html_to_markdown(info["content"], article_url)
+        self._save_as_markdown(info["title"] or f"CSDN文库_{doc_id}", md, doc_id, article_url, is_md=info["is_md"])
+        print("[OK] 文章获取成功并已保存！")
+
+        if not info["is_full"]:
+            print("[WARN] 当前仅获取到预览部分内容，完整全文需要登录 VIP 账号:")
+            print("       浏览器登录 CSDN 后，将 Cookie 保存到程序同目录的 cookie.txt，")
+            print("       或设置环境变量 CSDN_COOKIE，然后重新运行即可获取全文。")
 
     def _fetch_md_from_api(self, article_id: str) -> str | None:
         """通过 CSDN 编辑器 API 获取 Markdown 源码"""
@@ -354,6 +480,9 @@ def main():
     print("=" * 50)
     print("提示: 输入 CSDN 文章 URL 即可获取完整内容")
     print("支持格式: https://blog.csdn.net/用户名/article/details/文章ID")
+    print("          https://wenku.csdn.net/column/文档ID (CSDN 文库)")
+    print("付费全文: 浏览器登录 CSDN 后，将 Cookie 保存到程序同目录 cookie.txt")
+    print("          或设置环境变量 CSDN_COOKIE")
     print("输入 exit 退出程序")
     print("=" * 50)
 
