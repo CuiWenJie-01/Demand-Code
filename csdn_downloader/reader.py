@@ -88,7 +88,7 @@ class CsdnArticleReader:
                 "source": "wenku_page",
             }
             if not info["is_full"]:
-                result["message"] = "仅预览部分；完整全文需登录 VIP 账号（cookie.txt 或环境变量 CSDN_COOKIE）"
+                result["message"] = self._wenku_partial_hint(info)
             return result
 
         article_id = self._extract_article_id(article_url)
@@ -167,7 +167,9 @@ class CsdnArticleReader:
         if m:
             try:
                 state, _ = json.JSONDecoder().raw_decode(m.group(1))
-                detail = state.get("pageData", {}).get("detailInfo", {}) or {}
+                page_data = state.get("pageData", {}) or {}
+                detail = page_data.get("detailInfo", {}) or {}
+                user_info = page_data.get("curUserInfo", {}) or {}
                 content = detail.get("viewContent") or ""
                 if len(content) > 100:
                     return {
@@ -175,6 +177,8 @@ class CsdnArticleReader:
                         "content": content,
                         "is_md": True,
                         "is_full": bool(detail.get("isShowAll")),
+                        "is_vip": bool(user_info.get("isVip")),
+                        "login_user": user_info.get("userName") or "",
                     }
             except Exception:
                 pass
@@ -216,8 +220,19 @@ class CsdnArticleReader:
 
         message = "文章获取成功"
         if not info["is_full"]:
-            message += "（仅预览部分；完整全文需登录 VIP 账号，将 Cookie 保存到程序同目录 cookie.txt 或设置环境变量 CSDN_COOKIE）"
+            message += f"（{self._wenku_partial_hint(info)}）"
         return {"success": True, "message": message, "filepath": filepath, "title": title}
+
+    def _wenku_partial_hint(self, info: dict) -> str:
+        """文库仅返回预览部分时，根据登录态给出针对性提示"""
+        login_user = info.get("login_user", "")
+        if login_user:
+            if info.get("is_vip"):
+                return f"Cookie 已识别为用户 {login_user}，但未返回全文，该账号可能无此文档权限"
+            return f"Cookie 已识别为用户 {login_user}，但该账号不是 VIP，无法获取全文"
+        if self.engine.cookie:
+            return "仅预览部分；Cookie 已发送但未被识别，可能已过期，请重新从浏览器复制完整 Cookie"
+        return "仅预览部分；完整全文需登录 VIP 账号（将 Cookie 保存到程序同目录 cookie.txt 或设置环境变量 CSDN_COOKIE）"
 
     def _fetch_md_from_api(self, article_id: str) -> str | None:
         """通过 CSDN 编辑器 API 获取 Markdown 源码"""
