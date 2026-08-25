@@ -136,6 +136,119 @@ class CsdnArticleReader:
         parts = [p for p in urlparse(url).path.split("/") if p]
         return parts[-1] if parts else "unknown"
 
+    def _parse_init_state(self, html: str) -> dict | None:
+        """从 HTML 中解析 __INITIAL_STATE__ JSON 数据"""
+        m = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*)", html, re.S)
+        if not m:
+            return None
+        try:
+            state, _ = json.JSONDecoder().raw_decode(m.group(1))
+            return state.get("pageData", {}) or {}
+        except Exception:
+            return None
+
+    def _extract_article_from_page_data(self, page_data: dict) -> dict | None:
+        """从 pageData 中提取文章信息，返回 {"title", "content", "is_md", "is_full", ...}"""
+        detail = page_data.get("detailInfo", {}) or {}
+        user_info = page_data.get("curUserInfo", {}) or {}
+        content = detail.get("viewContent") or ""
+        if len(content) > 100:
+            return {
+                "title": detail.get("title"),
+                "content": content,
+                "is_md": True,
+                "is_full": bool(detail.get("isShowAll")),
+                "is_vip": bool(user_info.get("isVip")),
+                "login_user": user_info.get("userName") or "",
+            }
+        return None
+
+    def _is_column_page(self, page_data: dict) -> bool:
+        """判断是否为专栏页面（包含多篇文章的合集）"""
+        col = page_data.get("columnInfo", {}) or {}
+        article_list = col.get("list", []) or []
+        return len(article_list) > 1
+
+    def _fetch_wenku_column(self, article_url: str) -> dict | None:
+        """抓取 CSDN 文库专栏页面，获取专栏内所有文章的完整内容
+
+        专栏页面包含多篇文章（通过 columnInfo.list 列出），
+        使用 Playwright 动态渲染获取每篇文章的完整 Markdown 内容，
+        合并后返回。
+        """
+        html = self.engine.dynamic_get(article_url, timeout=30)
+        if not html:
+            return None
+
+        page_data = self._parse_init_state(html)
+        if not page_data:
+            return None
+
+        col = page_data.get("columnInfo", {}) or {}
+        article_list = col.get("list", []) or []
+        column_title = col.get("pTitle") or "CSDN文库专栏"
+        column_summary = col.get("summary") or ""
+
+        if not article_list:
+            return None
+
+        # 收集所有文章内容
+        all_articles = []
+        for article in article_list:
+            art_url = article.get("url", "")
+            art_title = article.get("title", "")
+            art_seq = article.get("seq", 0)
+            if not art_url:
+                continue
+
+            # 获取每篇文章的完整内容
+            art_html = self.engine.dynamic_get(art_url, timeout=30)
+            if not art_html:
+                all_articles.append({"seq": art_seq, "title": art_title, "content": "", "error": True})
+                continue
+
+            art_page_data = self._parse_init_state(art_html)
+            if not art_page_data:
+                all_articles.append({"seq": art_seq, "title": art_title, "content": "", "error": True})
+                continue
+
+            info = self._extract_article_from_page_data(art_page_data)
+            if info:
+                all_articles.append({
+                    "seq": art_seq,
+                    "title": art_title,
+                    "content": info["content"],
+                    "is_full": info["is_full"],
+                    "error": False,
+                })
+            else:
+                all_articles.append({"seq": art_seq, "title": art_title, "content": "", "error": True})
+
+        # 合并所有文章内容
+        merged_parts = []
+        if column_summary:
+            merged_parts.append(f"> {column_summary}\n")
+
+        for art in sorted(all_articles, key=lambda x: x["seq"]):
+            if art["error"] or not art["content"]:
+                merged_parts.append(f"\n## {art['title']}\n\n*（内容获取失败，可能需要 VIP 权限）*\n")
+            else:
+                merged_parts.append(f"\n## {art['title']}\n\n{art['content']}\n")
+
+        merged_content = "\n---\n".join(merged_parts)
+
+        # 判断是否所有文章都是完整内容
+        all_full = all(art.get("is_full", False) for art in all_articles if not art["error"])
+
+        return {
+            "title": column_title,
+            "content": merged_content,
+            "is_md": True,
+            "is_full": all_full,
+            "is_vip": False,
+            "login_user": "",
+        }
+
     def _fetch_wenku_article(self, article_url: str) -> dict | None:
         """抓取 CSDN 文库页面，返回 {"title", "content", "is_md", "is_full"}
 
@@ -144,7 +257,24 @@ class CsdnArticleReader:
         全文受登录态控制: 登录 VIP 账号后，服务端会在
         __INITIAL_STATE__.pageData.detailInfo.viewContent 中返回完整 Markdown；
         未登录/非 VIP 时该字段只有预览部分 (isShowAll=False)。
+
+        对于专栏页面（包含多篇文章的合集），会自动获取所有文章内容并合并。
         """
+        # 策略1: 使用 Playwright 动态渲染获取页面（可绕过 Cloudflare）
+        html = self.engine.dynamic_get(article_url, timeout=30)
+        if html:
+            page_data = self._parse_init_state(html)
+            if page_data:
+                # 检测是否为专栏页面
+                if self._is_column_page(page_data):
+                    return self._fetch_wenku_column(article_url)
+
+                # 单篇文章: 从 pageData 中提取内容
+                info = self._extract_article_from_page_data(page_data)
+                if info:
+                    return info
+
+        # 策略2: 使用 Scrapling Fetcher (curl_cffi) 基本 HTTP 请求
         headers = {
             "Accept": (
                 "text/html,application/xhtml+xml,application/xml;q=0.9,"
@@ -158,50 +288,32 @@ class CsdnArticleReader:
             "Upgrade-Insecure-Requests": "1",
         }
         page = self.engine.get(article_url, headers=headers)
-        if page is None or page.status != 200:
-            return None
-        html = self.engine.get_text(page)
+        if page is not None and page.status == 200:
+            html = self.engine.get_text(page)
+            page_data = self._parse_init_state(html)
+            if page_data:
+                info = self._extract_article_from_page_data(page_data)
+                if info:
+                    return info
 
-        # 优先解析 SSR 状态数据 (viewContent 已是 Markdown 格式)
-        m = re.search(r"window\.__INITIAL_STATE__\s*=\s*(\{.*)", html, re.S)
-        if m:
-            try:
-                state, _ = json.JSONDecoder().raw_decode(m.group(1))
-                page_data = state.get("pageData", {}) or {}
-                detail = page_data.get("detailInfo", {}) or {}
-                user_info = page_data.get("curUserInfo", {}) or {}
-                content = detail.get("viewContent") or ""
-                if len(content) > 100:
-                    return {
-                        "title": detail.get("title"),
-                        "content": content,
-                        "is_md": True,
-                        "is_full": bool(detail.get("isShowAll")),
-                        "is_vip": bool(user_info.get("isVip")),
-                        "login_user": user_info.get("userName") or "",
-                    }
-            except Exception:
-                pass
+            # 兜底: 从 DOM 中提取正文 HTML
+            soup = BeautifulSoup(html, "html.parser")
+            title = None
+            title_tag = soup.find("title")
+            if title_tag:
+                title = title_tag.get_text(strip=True).replace("- CSDN文库", "").strip()
+            selectors = [
+                "div#copyRef.content-view",
+                "div.markdown_views",
+                "div.htmledit_views",
+                "div.article-box div.cont",
+                "div#chatgpt-article-detail",
+            ]
+            for sel in selectors:
+                div = soup.select_one(sel)
+                if div and len(div.get_text(strip=True)) > 100:
+                    return {"title": title, "content": str(div), "is_md": False, "is_full": False}
 
-        # 兜底: 从 DOM 中提取正文 HTML
-        soup = BeautifulSoup(html, "html.parser")
-
-        title = None
-        title_tag = soup.find("title")
-        if title_tag:
-            title = title_tag.get_text(strip=True).replace("- CSDN文库", "").strip()
-
-        selectors = [
-            "div#copyRef.content-view",
-            "div.markdown_views",
-            "div.htmledit_views",
-            "div.article-box div.cont",
-            "div#chatgpt-article-detail",
-        ]
-        for sel in selectors:
-            div = soup.select_one(sel)
-            if div and len(div.get_text(strip=True)) > 100:
-                return {"title": title, "content": str(div), "is_md": False, "is_full": False}
         return None
 
     def _read_wenku_article(self, article_url: str, save_dir: str) -> dict:

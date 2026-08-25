@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 
 from scrapling.fetchers import Fetcher
+from playwright.sync_api import sync_playwright
 
 
 def load_csdn_cookie() -> str:
@@ -61,6 +62,47 @@ class ScraplingFetchEngine:
                 headers=self._build_headers(headers),
                 timeout=self.timeout,
             )
+        except Exception:
+            return None
+
+    def dynamic_get(self, url: str, timeout: int = 30) -> str | None:
+        """使用 Playwright (Chromium) 动态渲染页面，返回完整 HTML
+
+        适用于:
+        - 需要绕过 Cloudflare 等反爬保护的页面
+        - 内容由 JavaScript 动态加载的页面
+        - CSDN 文库专栏页面（需要 JS 渲染才能获取完整 INITIAL_STATE）
+
+        内部使用 Playwright 的无头 Chromium 浏览器，
+        等待网络空闲后返回最终渲染的 HTML。
+        """
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                context = browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/125.0.0.0 Safari/537.36"
+                    ),
+                    viewport={"width": 1920, "height": 1080},
+                )
+                if self.cookie:
+                    context.add_cookies([
+                        {
+                            "name": c.split("=", 1)[0].strip(),
+                            "value": c.split("=", 1)[1].strip(),
+                            "domain": ".csdn.net",
+                            "path": "/",
+                        }
+                        for c in self.cookie.split(";")
+                        if "=" in c
+                    ])
+                page = context.new_page()
+                page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+                html = page.content()
+                browser.close()
+                return html
         except Exception:
             return None
 
