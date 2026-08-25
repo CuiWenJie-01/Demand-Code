@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf2word-desktop"
+version = "0.1.0"
+description = "Local, resumable PDF-to-DOCX conversion engine for the PDF2Word Desktop application."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "lxml>=5.0",
+  "pillow>=10.0",
+  "pypdf>=5.0",
+  "pypdfium2>=4.30",
+  "python-docx>=1.1",
+]
+
+[project.optional-dependencies]
+# PaddlePaddle 3.3.x currently has a CPU/oneDNN PIR regression that prevents
+# PP-StructureV3 inference; keep the validated CPU runtime explicit.
+ocr = [
+  "paddlepaddle==3.2.2",
+  "paddleocr==3.7.0",
+  "paddlex[ocr]==3.7.2",
+]
+dev = ["pytest>=8.0", "reportlab>=4.0"]
+
+[project.scripts]
+pdf2word-engine = "pdf2word_engine.cli:main"
+pdf2word-worker = "pdf2word_engine.worker:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

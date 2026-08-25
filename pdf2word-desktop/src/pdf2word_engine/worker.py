@@ -1,0 +1,80 @@
+"""JSON Lines sidecar protocol for the future Tauri desktop host."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+from .models import ConversionMode
+from .ocr import paddleocr_capability
+from .pipeline import convert_pdf
+from .preflight import inspect_pdf
+
+
+def _send(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def _event(request_id: str, payload: dict[str, object]) -> None:
+    _send({"protocol_version": 1, "request_id": request_id, "event": payload})
+
+
+def _handle(request: dict[str, Any]) -> None:
+    request_id = str(request.get("request_id", ""))
+    command = request.get("command")
+    if not request_id:
+        raise ValueError("request_id 不能为空。")
+    if command == "preflight":
+        report = inspect_pdf(Path(request["source"]))
+        _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": report.to_dict(include_page_sizes=False)})
+        return
+    if command == "convert":
+        result = convert_pdf(
+            Path(request["source"]),
+            output_dir=Path(request["output_dir"]),
+            workspace_root=Path(request["workspace_root"]),
+            mode=ConversionMode(request.get("mode", "visual")),
+            dpi=int(request.get("dpi", 200)),
+            page_range=request.get("page_range"),
+            resume_job_id=request.get("resume_job_id"),
+            progress=lambda payload: _event(request_id, payload),
+        )
+        _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result.to_dict()})
+        return
+    if command == "ping":
+        capability = paddleocr_capability()
+        _send(
+            {
+                "protocol_version": 1,
+                "request_id": request_id,
+                "ok": True,
+                "result": {"status": "ready", "ocr": {"available": capability.available, "engine": capability.engine, "reason": capability.reason}},
+            }
+        )
+        return
+    raise ValueError(f"不支持的命令：{command}")
+
+
+def main() -> int:
+    for line in sys.stdin:
+        request_id = ""
+        try:
+            request = json.loads(line)
+            request_id = str(request.get("request_id", ""))
+            _handle(request)
+        except Exception as exc:
+            _send(
+                {
+                    "protocol_version": 1,
+                    "request_id": request_id,
+                    "ok": False,
+                    "error": {"code": type(exc).__name__, "message": str(exc)},
+                }
+            )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
