@@ -1,18 +1,9 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { EngineStatus, getEngineStatus, isTauriRuntime } from "./bridge";
 
-type ConversionMode = "visual" | "editable" | "both";
-
-const modeLabels: Record<ConversionMode, string> = {
-  visual: "极致还原版",
-  editable: "高保真可编辑版",
-  both: "同时生成两种版本"
-};
-
 export function App() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [mode, setMode] = useState<ConversionMode>("both");
   const [dpi, setDpi] = useState(200);
   const [engine, setEngine] = useState<EngineStatus>({ workerConfigured: false, message: "正在检查转换引擎…" });
 
@@ -66,13 +57,7 @@ export function App() {
 
       <section className="settings-grid">
         <label className="card setting">
-          <span>导出模式</span>
-          <select value={mode} onChange={(event) => setMode(event.target.value as ConversionMode)}>
-            {(Object.keys(modeLabels) as ConversionMode[]).map((key) => <option key={key} value={key}>{modeLabels[key]}</option>)}
-          </select>
-        </label>
-        <label className="card setting">
-          <span>保真渲染 DPI</span>
+          <span>OCR 识别 DPI</span>
           <select value={dpi} onChange={(event) => setDpi(Number(event.target.value))}>
             <option value={144}>144 DPI（较小文件）</option>
             <option value={200}>200 DPI（推荐）</option>
@@ -85,8 +70,7 @@ export function App() {
         <h2>转换引擎</h2>
         <p>{engine.message}</p>
         <ul>
-          <li>保真模式：逐页 PDFium 渲染，无损嵌入 Word。</li>
-          <li>可编辑模式：需要 PaddleOCR PP-StructureV3 模型包。</li>
+          <li>仅生成可编辑 Word：需要 PaddleOCR PP-StructureV3 模型包。</li>
           <li>大文件任务：逐页检查点、暂停恢复和失败重试。</li>
         </ul>
       </section>
@@ -94,7 +78,7 @@ export function App() {
       <footer className="action-bar">
         <div>
           <strong>{selectedFile ? "已选择文件，等待预检" : "请选择一个 PDF"}</strong>
-          <span>当前模式：{modeLabels[mode]} · {dpi} DPI</span>
+          <span>可编辑 Word · {dpi} DPI</span>
         </div>
         <button type="button" className="primary-button" disabled={!desktopReady || !selectedFile} title={desktopReady ? "开始转换" : "Tauri sidecar 尚未打包"}>
           开始转换

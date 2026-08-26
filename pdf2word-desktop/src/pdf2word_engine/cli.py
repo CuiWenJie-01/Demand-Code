@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .errors import Pdf2WordError
-from .models import ConversionMode, PageSize, PdfKind
+from .models import PageSize, PdfKind
 from .ocr import create_paddle_pipeline, predict_page_model, write_page_model
 from .pipeline import convert_pdf
 from .preflight import inspect_pdf
@@ -25,7 +25,6 @@ def _build_parser() -> argparse.ArgumentParser:
     convert.add_argument("source", type=Path)
     convert.add_argument("--output-dir", type=Path, required=True)
     convert.add_argument("--workspace-root", type=Path, default=Path(".pdf2word-workspace"))
-    convert.add_argument("--mode", choices=[mode.value for mode in ConversionMode], default=ConversionMode.VISUAL.value)
     convert.add_argument("--dpi", type=int, default=200)
     convert.add_argument("--pages", dest="page_range")
     convert.add_argument("--resume-job", help="恢复同一输入与同一配置的未完成任务")
@@ -86,7 +85,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.source,
             output_dir=args.output_dir,
             workspace_root=args.workspace_root,
-            mode=ConversionMode(args.mode),
             dpi=args.dpi,
             page_range=args.page_range,
             resume_job_id=args.resume_job,

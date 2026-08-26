@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .models import ConversionMode
 from .ocr import paddleocr_capability
 from .pipeline import convert_pdf
 from .preflight import inspect_pdf
@@ -35,7 +34,6 @@ def _handle(request: dict[str, Any]) -> None:
             Path(request["source"]),
             output_dir=Path(request["output_dir"]),
             workspace_root=Path(request["workspace_root"]),
-            mode=ConversionMode(request.get("mode", "visual")),
             dpi=int(request.get("dpi", 200)),
             page_range=request.get("page_range"),
             resume_job_id=request.get("resume_job_id"),

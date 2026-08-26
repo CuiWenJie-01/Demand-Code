@@ -1,8 +1,8 @@
 """Optional OCR capability detection and PaddleOCR boundary.
 
-The core package intentionally imports no ML framework. This keeps visual
-replica conversion usable in a small offline installation and makes model
-installation an explicit desktop setup step.
+The core package intentionally imports no ML framework. This keeps PDF
+preflight and ordinary text-layer conversion usable in a small installation
+and makes model installation an explicit desktop setup step.
 """
 
 from __future__ import annotations

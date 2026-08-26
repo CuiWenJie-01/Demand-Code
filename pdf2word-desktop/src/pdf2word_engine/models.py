@@ -17,12 +17,6 @@ class PdfKind(str, Enum):
     DAMAGED = "damaged"
 
 
-class ConversionMode(str, Enum):
-    VISUAL = "visual"
-    EDITABLE = "editable"
-    BOTH = "both"
-
-
 class JobState(str, Enum):
     CREATED = "created"
     RUNNING = "running"

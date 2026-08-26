@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
 
-from pdf2word_engine.models import ConversionMode, JobState
+from pdf2word_engine.models import JobState
 from pdf2word_engine.pipeline import convert_pdf, parse_page_range, required_workspace_bytes
 from pdf2word_engine.job_store import JobWorkspace
 
@@ -22,26 +21,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(required_workspace_bytes(1024), 3 * 1024**3)
         self.assertEqual(required_workspace_bytes(1024**3), 8 * 1024**3)
 
-    def test_visual_conversion_creates_openxml_document(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            source = create_text_pdf(root / "source.pdf")
-            result = convert_pdf(
-                source,
-                output_dir=root / "output",
-                workspace_root=root / "workspace",
-                mode=ConversionMode.VISUAL,
-                dpi=96,
-            )
-            output = result.outputs[0]
-            with zipfile.ZipFile(output) as archive:
-                names = archive.namelist()
-
-        self.assertEqual(result.state, JobState.COMPLETED)
-        self.assertTrue(output.name.endswith("保真版.docx"))
-        self.assertIn("word/document.xml", names)
-        self.assertTrue(any(name.startswith("word/media/") for name in names))
-
     def test_editable_conversion_works_for_text_layer_pdf(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -50,7 +29,6 @@ class PipelineTests(unittest.TestCase):
                 source,
                 output_dir=root / "output",
                 workspace_root=root / "workspace",
-                mode=ConversionMode.EDITABLE,
                 dpi=96,
             )
 

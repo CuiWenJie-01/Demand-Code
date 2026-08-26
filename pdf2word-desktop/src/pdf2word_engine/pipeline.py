@@ -7,12 +7,11 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-from .errors import EncryptedPdfError, JobCancelledError, OcrRequiredError
+from .errors import EncryptedPdfError, JobCancelledError
 from .job_store import JobWorkspace, file_sha256
-from .models import ConversionMode, ConversionResult, JobState, PreflightReport, RenderedPage
+from .models import ConversionResult, JobState
 from .preflight import inspect_pdf
-from .renderer import render_pages
-from .word import create_basic_editable_docx, create_visual_docx
+from .word import create_basic_editable_docx
 
 
 ProgressCallback = Callable[[dict[str, object]], None]
@@ -70,41 +69,11 @@ def ensure_workspace_capacity(source: Path, *destinations: Path) -> None:
             )
 
 
-def _render_or_resume(
-    source: Path,
-    *,
-    workspace: JobWorkspace,
-    page_indices: list[int],
-    dpi: int,
-    report: PreflightReport,
-    callback: ProgressCallback | None,
-) -> list[RenderedPage]:
-    completed = workspace.store.completed_page_paths()
-    missing = [index for index in page_indices if index not in completed or not completed[index].is_file()]
-    rendered: dict[int, RenderedPage] = {}
-    for index in page_indices:
-        if index in completed and completed[index].is_file():
-            rendered[index] = RenderedPage(index, completed[index], report.page_sizes[index])
-    if missing:
-        for page in render_pages(
-            source,
-            page_indices=missing,
-            page_directory=workspace.page_dir,
-            dpi=dpi,
-            should_cancel=workspace.store.should_cancel,
-            progress=callback,
-        ):
-            workspace.store.mark_page(page.page_index, state="rendered", image_path=page.image_path)
-            rendered[page.page_index] = page
-    return [rendered[index] for index in page_indices]
-
-
 def convert_pdf(
     source: str | Path,
     *,
     output_dir: str | Path,
     workspace_root: str | Path,
-    mode: ConversionMode = ConversionMode.VISUAL,
     dpi: int = 200,
     page_range: str | None = None,
     resume_job_id: str | None = None,
@@ -124,7 +93,6 @@ def convert_pdf(
         raise EncryptedPdfError("PDF 已加密；当前版本不支持密码输入。")
     selected_pages = parse_page_range(page_range, report.page_count)
     config = {
-        "mode": mode.value,
         "dpi": dpi,
         "page_range": page_range,
         "selected_pages": [index + 1 for index in selected_pages],
@@ -145,35 +113,17 @@ def convert_pdf(
     outputs: list[Path] = []
     warnings = list(report.warnings)
     try:
-        if mode in {ConversionMode.VISUAL, ConversionMode.BOTH}:
-            pages = _render_or_resume(
+        editable_output = destination / f"{source_path.stem}-可编辑版.docx"
+        outputs.append(
+            create_basic_editable_docx(
                 source_path,
-                workspace=workspace,
+                page_sizes=report.page_sizes,
+                kind=report.kind,
                 page_indices=selected_pages,
-                dpi=dpi,
-                report=report,
-                callback=progress,
+                output_path=editable_output,
             )
-            visual_output = destination / f"{source_path.stem}-保真版.docx"
-            outputs.append(create_visual_docx(pages, visual_output))
-            _emit(progress, {"type": "output_ready", "job_id": workspace.job_id, "path": str(visual_output), "mode": "visual"})
-        if mode in {ConversionMode.EDITABLE, ConversionMode.BOTH}:
-            editable_output = destination / f"{source_path.stem}-可编辑版.docx"
-            try:
-                outputs.append(
-                    create_basic_editable_docx(
-                        source_path,
-                        page_sizes=report.page_sizes,
-                        kind=report.kind,
-                        page_indices=selected_pages,
-                        output_path=editable_output,
-                    )
-                )
-                _emit(progress, {"type": "output_ready", "job_id": workspace.job_id, "path": str(editable_output), "mode": "editable"})
-            except OcrRequiredError as exc:
-                if mode is ConversionMode.EDITABLE:
-                    raise
-                warnings.append(str(exc))
+        )
+        _emit(progress, {"type": "output_ready", "job_id": workspace.job_id, "path": str(editable_output), "mode": "editable"})
         workspace.store.set_state(JobState.COMPLETED)
         _emit(progress, {"type": "job_state_changed", "job_id": workspace.job_id, "state": JobState.COMPLETED.value})
         return ConversionResult(workspace.job_id, JobState.COMPLETED, report, outputs, warnings)

@@ -1,7 +1,7 @@
 # M0 技术验证记录
 
-> 日期：2026-08-25  
-> 状态：保真大文件主链路完成；OCR、Word 实际渲染对比和可编辑版待继续验证
+> 日期：2026-08-26（路线调整后更新）  
+> 状态：仅可编辑 Word 路线；OCR、Word 实际渲染对比和绝对定位重建待继续验证
 
 ## 已实现
 
@@ -9,7 +9,6 @@
 - 路由分类：born-digital、scanned、outlined、mixed、encrypted、damaged。
 - PDFium 按页渲染：不一次性把整份 PDF 放入内存。
 - SQLite 任务工作区：页级 `pending/rendered` 状态、源文件哈希和转换配置。
-- 保真版 DOCX：每个 PDF 页面对应一个 Word 页面，源页面 PNG 按页面尺寸无损嵌入。
 - 文字 PDF 的基础可编辑 DOCX：仅面向已有可靠文字层的 MVP 路径。
 - JSON Lines worker：为后续 Tauri sidecar 提供 `ping`、`preflight`、`convert` 协议，错误也会关联原 `request_id`。
 - PaddleOCR PageModel 适配：将 PP-StructureV3 的版面 JSON 标准化为版本化页面块模型；缺少可靠坐标的区域会明确拒绝进入可编辑重建。
@@ -22,12 +21,11 @@
 | --- | --- |
 | 文字 PDF 预检分类 | 通过 |
 | 页码范围解析与错误处理 | 通过 |
-| 保真 DOCX 的 OOXML/媒体部分 | 通过 |
 | 文字 PDF 可编辑 DOCX | 通过 |
 | 任务工作区重新打开及不存在任务保护 | 通过 |
 | PaddleOCR 结果到 PageModel 的字段映射及异常区域保护 | 通过 |
 
-结果：12/12 通过。
+结果：11/11 通过。
 
 ## 真实样例验证
 
@@ -48,26 +46,7 @@ D:\work\31.半月谈行测1000题下.pdf
 | 具有 XObject 的页数 | 381 |
 | 抽样可提取字符数 | 0 |
 
-先验证了第 10 页和第 300 页，随后使用 144 DPI 对完整 381 页执行保真转换：
-
-```text
-outputs/m0-sample/31.半月谈行测1000题下-保真版.docx
-```
-
-完整转换结果：
-
-- 381 页全部完成，转换耗时约 123 秒；
-- DOCX 大小为 124,154,949 字节，约 118.4 MiB；
-- 工作区中间文件总大小为 127,880,773 字节，约 121.9 MiB；
-- DOCX 包含 381 个页面节、381 个内联页面图和 381 个媒体部件；
-- 工作区中 381 张源渲染 PNG 与 DOCX 中 381 张嵌入 PNG 做 SHA-256 比较完全一致；
-- 因此当前保真模式没有对页面图片再次压缩或重采样。
-
-该结果验证了大文件的逐页渲染、SQLite 页面检查点、临时工作区和最终 DOCX 组装主链路。当前输出文件可见于：
-
-```text
-outputs/m0-full/31.半月谈行测1000题下-保真版.docx
-```
+第 10 页和第 300 页已完成逐页渲染验证。此前用于验证大文件分页渲染的页图 DOCX 路线已根据产品决策移除，不再是项目功能或验收目标。大文件处理的任务工作区、逐页渲染和页面检查点基础设施会保留给 OCR 与可编辑重建使用。
 
 ## OCR / PageModel 样页验证
 
@@ -99,7 +78,7 @@ runtime/jobs/7692f85f062948d987c1f5c1a31528bd/pages/0010/page-model.json
 outputs/m0-paddle-native/render.docx
 ```
 
-该文档为 42,048 字节，包含 15 个非空段落和 2 个内联图。它确认了 OCR 结果可被 Paddle 的内容恢复路径导出为 DOCX，但尚未在 Word/LibreOffice 中再渲染，因此不能把它认定为视觉保真输出；它仅用于与项目的保真页图 DOCX 和未来绝对定位可编辑 DOCX 比较。
+该文档为 42,048 字节，包含 15 个非空段落和 2 个内联图。它确认了 OCR 结果可被 Paddle 的内容恢复路径导出为 DOCX，但尚未在 Word/LibreOffice 中再渲染，因此仅作为未来绝对定位可编辑 DOCX 的内容恢复对照。
 
 ## 桌面端验证
 
@@ -111,7 +90,7 @@ outputs/m0-paddle-native/render.docx
 
 ## 尚未完成的 M0 验证
 
-1. 当前环境未检测到 Microsoft Word 或 LibreOffice，尚未对 DOCX 再渲染为 PDF/PNG 并计算 SSIM。
+1. 当前环境未检测到 Microsoft Word 或 LibreOffice，尚未对可编辑 DOCX 再渲染为 PDF/PNG 并计算版式差异。
 2. 已建立项目隔离的 PaddleOCR CPU 验证环境并下载模型；PaddlePaddle 3.3.1 的 oneDNN/PIR 缺陷可稳定复现，已在隔离环境降为 3.2.2 后继续真实样页推理。主转换引擎尚未把 OCR 自动接入可编辑 Word 输出，因而不会伪造文字。上游记录：[Paddle #77340](https://github.com/PaddlePaddle/Paddle/issues/77340)。
 3. 尚未验证公式、图表、竖排文字和水印的 OCR/绝对定位 Word 重建效果。
 4. Tauri 编译因本机应用程序控制策略被拦截，尚未生成或验证 `.exe` 安装包。

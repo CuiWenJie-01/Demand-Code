@@ -1,18 +1,15 @@
-"""DOCX renderers with explicit fidelity boundaries."""
+"""DOCX generation helpers for editable Word output."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
-
 from docx import Document
 from docx.enum.section import WD_SECTION
-from docx.oxml import OxmlElement
 from docx.shared import Emu, Pt
 from pypdf import PdfReader
 
 from .errors import OcrRequiredError
-from .models import PageSize, PdfKind, RenderedPage
+from .models import PageSize, PdfKind
 
 
 EMU_PER_POINT = 12_700
@@ -29,40 +26,10 @@ def _set_page_geometry(section: object, size: PageSize) -> None:
     section.footer_distance = Emu(0)  # type: ignore[attr-defined]
 
 
-def _disable_picture_compression(document: Document) -> None:
-    element = OxmlElement("w:doNotCompressPictures")
-    document.settings.element.append(element)
-
-
 def _format_page_paragraph(paragraph: object) -> None:
     paragraph.paragraph_format.space_before = Pt(0)  # type: ignore[attr-defined]
     paragraph.paragraph_format.space_after = Pt(0)  # type: ignore[attr-defined]
     paragraph.paragraph_format.line_spacing = 1  # type: ignore[attr-defined]
-
-
-def create_visual_docx(pages: Iterable[RenderedPage], output_path: str | Path) -> Path:
-    """Create a one-PDF-page-to-one-Word-page visual-replica DOCX."""
-
-    page_list = list(pages)
-    if not page_list:
-        raise ValueError("没有可写入 DOCX 的页面。")
-    output = Path(output_path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    document = Document()
-    _disable_picture_compression(document)
-    for position, rendered in enumerate(page_list):
-        if position == 0:
-            section = document.sections[0]
-            paragraph = document.add_paragraph()
-        else:
-            section = document.add_section(WD_SECTION.NEW_PAGE)
-            paragraph = document.add_paragraph()
-        _set_page_geometry(section, rendered.size)
-        _format_page_paragraph(paragraph)
-        run = paragraph.add_run()
-        run.add_picture(str(rendered.image_path), width=Emu(round(rendered.size.width_pt * EMU_PER_POINT)))
-    document.save(output)
-    return output
 
 
 def _extract_page_text(source: str | Path) -> list[str]:
@@ -99,7 +66,7 @@ def create_basic_editable_docx(
     selected = [texts[index] if index < len(texts) else "" for index in page_indices]
     if kind in {PdfKind.OUTLINED, PdfKind.SCANNED} or not any(selected):
         raise OcrRequiredError(
-            "该 PDF 没有可靠文字层。可编辑模式需要安装并配置 PaddleOCR；请先使用 visual 保真模式。"
+            "该 PDF 没有可靠文字层。需要安装并配置 PaddleOCR 后才能生成可编辑 Word。"
         )
 
     output = Path(output_path)
