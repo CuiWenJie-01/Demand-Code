@@ -12,3 +12,10 @@ outputs/
 models/
 *.docx
 *.log
+runtime/
+tmp/
+*.egg-info/
+docs/*.pdf
+desktop/src-tauri/binaries/
+desktop/src-tauri/target/
+desktop/dist/

@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": ["binaries/pdf2word-worker"],
     "targets": ["nsis"],
     "windows": {
       "webviewInstallMode": {

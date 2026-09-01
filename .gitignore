@@ -38,3 +38,12 @@ Thumbs.db
 
 # Git
 .git/
+
+# PDF2Word generated artifacts and local baselines
+/pdf2word-desktop/runtime/
+/pdf2word-desktop/tmp/
+/pdf2word-desktop/src/*.egg-info/
+/pdf2word-desktop/docs/*.pdf
+/pdf2word-desktop/desktop/src-tauri/binaries/
+/pdf2word-desktop/desktop/src-tauri/target/
+/pdf2word-desktop/desktop/dist/

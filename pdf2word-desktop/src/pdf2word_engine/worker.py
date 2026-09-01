@@ -10,6 +10,12 @@ from typing import Any
 from .ocr import paddleocr_capability
 from .pipeline import convert_pdf
 from .preflight import inspect_pdf
+from .representative import (
+    cer_review_catalog,
+    load_representative_manifest,
+    prepare_cer_review_page,
+    save_cer_review_page,
+)
 
 
 def _send(payload: dict[str, Any]) -> None:
@@ -40,6 +46,49 @@ def _handle(request: dict[str, Any]) -> None:
             progress=lambda payload: _event(request_id, payload),
         )
         _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result.to_dict()})
+        return
+    if command == "cer_review_catalog":
+        manifest_path = Path(request["manifest"])
+        manifest = load_representative_manifest(manifest_path)
+        _send(
+            {
+                "protocol_version": 1,
+                "request_id": request_id,
+                "ok": True,
+                "result": cer_review_catalog(manifest, manifest_path),
+            }
+        )
+        return
+    if command == "cer_review_prepare":
+        manifest = load_representative_manifest(Path(request["manifest"]))
+        result = prepare_cer_review_page(
+            manifest,
+            page_number=int(request["page_number"]),
+            source_pdf=Path(request["source_pdf"]),
+            independent_ocr_path=Path(request["independent_ocr"]) if request.get("independent_ocr") else None,
+            dpi=int(request.get("dpi", 144)),
+            low_confidence_threshold=float(request.get("low_confidence_threshold", 0.90)),
+        )
+        _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result})
+        return
+    if command == "cer_review_save":
+        manifest = load_representative_manifest(Path(request["manifest"]))
+        raw_segments = request.get("segments")
+        if raw_segments is not None and not isinstance(raw_segments, list):
+            raise ValueError("segments 必须是数组。")
+        output = save_cer_review_page(
+            manifest,
+            page_number=int(request["page_number"]),
+            segments=raw_segments,
+        )
+        _send(
+            {
+                "protocol_version": 1,
+                "request_id": request_id,
+                "ok": True,
+                "result": {"annotation_path": str(output)},
+            }
+        )
         return
     if command == "ping":
         capability = paddleocr_capability()

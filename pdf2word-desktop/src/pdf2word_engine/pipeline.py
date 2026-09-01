@@ -9,9 +9,20 @@ from pathlib import Path
 
 from .errors import EncryptedPdfError, JobCancelledError
 from .job_store import JobWorkspace, file_sha256
-from .models import ConversionResult, JobState
+from .models import PAGE_MODEL_SCHEMA_VERSION, ConversionResult, JobState, PageModel, PdfKind, PreflightReport, RenderedPage
+from .ocr import (
+    create_paddle_pipeline,
+    merge_semantic_callout_lines,
+    materialize_visual_fallbacks,
+    page_model_from_paddle_result,
+    predict_page_model,
+    recover_semantic_callout_lines,
+    write_page_model,
+)
 from .preflight import inspect_pdf
-from .word import create_basic_editable_docx
+from .quality import editable_quality_report
+from .renderer import render_pages
+from .word import create_basic_editable_docx, create_positioned_editable_docx
 
 
 ProgressCallback = Callable[[dict[str, object]], None]
@@ -69,6 +80,126 @@ def ensure_workspace_capacity(source: Path, *destinations: Path) -> None:
             )
 
 
+def _load_page_model(path: Path) -> PageModel | None:
+    try:
+        return PageModel.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
+def _render_pages_for_ocr(
+    source: Path,
+    *,
+    workspace: JobWorkspace,
+    page_indices: list[int],
+    dpi: int,
+    report: PreflightReport,
+    callback: ProgressCallback | None,
+) -> list[RenderedPage]:
+    page_sizes = report.page_sizes
+    completed = workspace.store.completed_page_paths()
+    rendered: dict[int, RenderedPage] = {
+        index: RenderedPage(index, image_path, page_sizes[index])
+        for index, image_path in completed.items()
+        if index in page_indices and image_path.is_file()
+    }
+    missing = [index for index in page_indices if index not in rendered]
+    for page in render_pages(
+        source,
+        page_indices=missing,
+        page_directory=workspace.page_dir,
+        dpi=dpi,
+        should_cancel=workspace.store.should_cancel,
+        progress=callback,
+    ):
+        workspace.store.mark_page(page.page_index, state="rendered", image_path=page.image_path)
+        rendered[page.page_index] = page
+    return [rendered[index] for index in page_indices]
+
+
+def _create_ocr_page_models(
+    source: Path,
+    *,
+    workspace: JobWorkspace,
+    page_indices: list[int],
+    dpi: int,
+    report: PreflightReport,
+    callback: ProgressCallback | None,
+) -> list[PageModel]:
+    rendered_pages = _render_pages_for_ocr(
+        source,
+        workspace=workspace,
+        page_indices=page_indices,
+        dpi=dpi,
+        report=report,
+        callback=callback,
+    )
+    models: dict[int, PageModel] = {}
+    pending: list[RenderedPage] = []
+    for rendered in rendered_pages:
+        page_dir = workspace.page_dir(rendered.page_index)
+        model_path = page_dir / "page-model.json"
+        model = _load_page_model(model_path)
+        if model is not None and model.page_index == rendered.page_index and model.schema_version == PAGE_MODEL_SCHEMA_VERSION:
+            models[rendered.page_index] = model
+            continue
+        # A renderer/model upgrade must not force a costly new OCR pass for a
+        # 150 MiB document.  Re-normalize the durable raw Paddle result when it
+        # is available, and only enqueue OCR if that raw checkpoint is missing.
+        raw_path = page_dir / "paddle-raw.json"
+        try:
+            raw = json.loads(raw_path.read_text(encoding="utf-8"))
+            rebuilt = page_model_from_paddle_result(
+                raw,
+                page_index=rendered.page_index,
+                size=rendered.size,
+                source_type=report.kind,
+            )
+            focused_lines = recover_semantic_callout_lines(rebuilt, rendered.image_path, page_dir / "regions")
+            if focused_lines:
+                payload = raw.get("res") if isinstance(raw.get("res"), dict) else raw
+                if isinstance(payload, dict):
+                    payload["semantic_line_ocr"] = merge_semantic_callout_lines(
+                        payload.get("semantic_line_ocr"), focused_lines
+                    )
+                    raw_path.write_text(json.dumps(raw, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+                    rebuilt = page_model_from_paddle_result(
+                        raw,
+                        page_index=rendered.page_index,
+                        size=rendered.size,
+                        source_type=report.kind,
+                    )
+            materialize_visual_fallbacks(rebuilt, rendered.image_path, page_dir / "regions")
+            write_page_model(rebuilt, model_path)
+            models[rendered.page_index] = rebuilt
+            _emit(callback, {"type": "page_rebuilt", "job_id": workspace.job_id, "page": rendered.page_index + 1, "stage": "ocr_cache"})
+        except (OSError, ValueError, json.JSONDecodeError, KeyError, TypeError):
+            pending.append(rendered)
+    if pending:
+        pipeline = create_paddle_pipeline(
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_formula_recognition=False,
+            use_chart_recognition=False,
+        )
+        for rendered in pending:
+            _emit(callback, {"type": "page_started", "job_id": workspace.job_id, "page": rendered.page_index + 1, "stage": "ocr"})
+            page_dir = workspace.page_dir(rendered.page_index)
+            model = predict_page_model(
+                pipeline,
+                rendered.image_path,
+                page_index=rendered.page_index,
+                size=rendered.size,
+                source_type=report.kind,
+                raw_output_path=page_dir / "paddle-raw.json",
+                region_directory=page_dir / "regions",
+            )
+            write_page_model(model, page_dir / "page-model.json")
+            models[rendered.page_index] = model
+            _emit(callback, {"type": "page_completed", "job_id": workspace.job_id, "page": rendered.page_index + 1, "stage": "ocr"})
+    return [models[index] for index in page_indices]
+
+
 def convert_pdf(
     source: str | Path,
     *,
@@ -92,7 +223,9 @@ def convert_pdf(
     if report.encrypted:
         raise EncryptedPdfError("PDF 已加密；当前版本不支持密码输入。")
     selected_pages = parse_page_range(page_range, report.page_count)
+    uses_ocr = report.kind is not PdfKind.BORN_DIGITAL
     config = {
+        "route": "ocr_layout" if uses_ocr else "text_layer",
         "dpi": dpi,
         "page_range": page_range,
         "selected_pages": [index + 1 for index in selected_pages],
@@ -111,22 +244,37 @@ def convert_pdf(
     _emit(progress, {"type": "job_state_changed", "job_id": workspace.job_id, "state": JobState.RUNNING.value})
     workspace.store.set_state(JobState.RUNNING)
     outputs: list[Path] = []
+    quality_report_path: Path | None = None
     warnings = list(report.warnings)
     try:
         editable_output = destination / f"{source_path.stem}-可编辑版.docx"
-        outputs.append(
-            create_basic_editable_docx(
+        if uses_ocr:
+            models = _create_ocr_page_models(
                 source_path,
-                page_sizes=report.page_sizes,
-                kind=report.kind,
+                workspace=workspace,
                 page_indices=selected_pages,
-                output_path=editable_output,
+                dpi=dpi,
+                report=report,
+                callback=progress,
             )
-        )
+            outputs.append(create_positioned_editable_docx(models, editable_output))
+            quality_report_path = destination / f"{source_path.stem}-质量报告.json"
+            _write_json(quality_report_path, editable_quality_report(models))
+            _emit(progress, {"type": "quality_report_ready", "job_id": workspace.job_id, "path": str(quality_report_path)})
+        else:
+            outputs.append(
+                create_basic_editable_docx(
+                    source_path,
+                    page_sizes=report.page_sizes,
+                    kind=report.kind,
+                    page_indices=selected_pages,
+                    output_path=editable_output,
+                )
+            )
         _emit(progress, {"type": "output_ready", "job_id": workspace.job_id, "path": str(editable_output), "mode": "editable"})
         workspace.store.set_state(JobState.COMPLETED)
         _emit(progress, {"type": "job_state_changed", "job_id": workspace.job_id, "state": JobState.COMPLETED.value})
-        return ConversionResult(workspace.job_id, JobState.COMPLETED, report, outputs, warnings)
+        return ConversionResult(workspace.job_id, JobState.COMPLETED, report, outputs, warnings, quality_report_path)
     except JobCancelledError:
         workspace.store.set_state(JobState.CANCELLED)
         _emit(progress, {"type": "job_state_changed", "job_id": workspace.job_id, "state": JobState.CANCELLED.value})

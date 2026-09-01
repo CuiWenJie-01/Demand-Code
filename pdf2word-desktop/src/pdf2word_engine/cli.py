@@ -8,10 +8,21 @@ from pathlib import Path
 from typing import Sequence
 
 from .errors import Pdf2WordError
-from .models import PageSize, PdfKind
+from .models import PageModel, PageSize, PdfKind
 from .ocr import create_paddle_pipeline, predict_page_model, write_page_model
 from .pipeline import convert_pdf
 from .preflight import inspect_pdf
+from .regression import verify_golden_page
+from .representative import (
+    load_representative_manifest,
+    run_representative_quality_gates,
+    run_representative_regressions,
+    run_representative_word_regressions,
+    write_cer_review_pages,
+    write_cer_templates,
+)
+from .word import create_positioned_editable_docx
+from .word_render import verify_with_microsoft_word
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -38,6 +49,49 @@ def _build_parser() -> argparse.ArgumentParser:
     ocr_page.add_argument("--output", type=Path, required=True)
     ocr_page.add_argument("--raw-output", type=Path, help="保存 Paddle 原始 JSON，仅用于适配器调试")
     ocr_page.add_argument("--native-word-output-dir", type=Path, help="保存 Paddle 原生 Word，仅用于 M0 对照")
+    ocr_page.add_argument("--regions-dir", type=Path, help="保存图表、公式和图片等不可重建区域的 PNG 回退素材")
+
+    render_models = commands.add_parser("render-page-model", help="把一个或多个 PageModel JSON 重建为可编辑 DOCX")
+    render_models.add_argument("models", type=Path, nargs="+", help="PageModel JSON 文件")
+    render_models.add_argument("--output", type=Path, required=True)
+
+    regression = commands.add_parser("visual-regression", help="验证黄金 PageModel 生成的 DOCX 可编辑性、对齐与分页")
+    regression.add_argument("model", type=Path, help="单页黄金 PageModel JSON 文件")
+    regression.add_argument("docx", type=Path, help="待验证的定位式可编辑 DOCX")
+    regression.add_argument("--renderer", help="Office 兼容渲染器路径；默认自动查找 soffice/libreoffice")
+    regression.add_argument("--expected-pages", type=int, default=1, help="DOCX 再渲染后的预期页数")
+
+    representative = commands.add_parser("representative-regression", help="执行固定代表页集的已就绪视觉回归")
+    representative.add_argument("manifest", type=Path, help="代表页 JSON 清单")
+    representative.add_argument("--renderer", help="Office 兼容渲染器路径；默认自动查找 soffice/libreoffice")
+    representative.add_argument("--strict", action="store_true", help="要求每一张代表页都已有 PageModel 与 DOCX 基线")
+
+    quality_gate = commands.add_parser("representative-quality-gate", help="重新生成代表页并执行视觉差异与可选 CER 门禁")
+    quality_gate.add_argument("manifest", type=Path, help="代表页 JSON 清单")
+    quality_gate.add_argument("--renderer", help="Office 兼容渲染器路径；默认自动查找 soffice/libreoffice")
+    quality_gate.add_argument("--require-cer", action="store_true", help="缺少人工转写 CER 标注时直接失败")
+
+    cer_template = commands.add_parser("cer-template", help="为固定代表页生成按页确认的 CER 审校草稿 JSON")
+    cer_template.add_argument("manifest", type=Path, help="代表页 JSON 清单")
+    cer_template.add_argument("--output-dir", type=Path, required=True, help="CER 标注 JSON 输出目录")
+
+    cer_review = commands.add_parser("cer-review", help="生成原图对照、差异高亮、一次整页确认的 CER 审校 HTML")
+    cer_review.add_argument("manifest", type=Path, help="代表页 JSON 清单")
+    cer_review.add_argument("--output-dir", type=Path, required=True, help="审校 HTML 和原图输出目录")
+    cer_review.add_argument("--source-pdf", type=Path, help="源 PDF；提供后每页显示原图")
+    cer_review.add_argument("--independent-ocr", type=Path, help="可选独立 OCR JSON（pages -> page -> block_id -> text）")
+    cer_review.add_argument("--dpi", type=int, default=144, help="原图渲染 DPI，默认 144")
+    cer_review.add_argument("--low-confidence-threshold", type=float, default=0.90, help="低于该置信度的块高亮")
+
+    word_regression = commands.add_parser("word-render-regression", help="使用安装的 Microsoft Word 导出并验证单页 DOCX")
+    word_regression.add_argument("model", type=Path, help="单页 PageModel JSON 文件")
+    word_regression.add_argument("docx", type=Path, help="待验证的 DOCX")
+    word_regression.add_argument("--output-pdf", type=Path, required=True, help="Microsoft Word 导出的 PDF 路径")
+    word_regression.add_argument("--expected-pages", type=int, default=1)
+
+    representative_word = commands.add_parser("representative-word-regression", help="使用 Microsoft Word 执行全部代表页实机分页验证")
+    representative_word.add_argument("manifest", type=Path, help="代表页 JSON 清单")
+    representative_word.add_argument("--output-dir", type=Path, required=True, help="Microsoft Word PDF 输出目录")
     return parser
 
 
@@ -77,9 +131,118 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_type=PdfKind(args.source_type),
                 raw_output_path=args.raw_output,
                 native_word_output_dir=args.native_word_output_dir,
+                region_directory=args.regions_dir,
             )
             output = write_page_model(model, args.output)
             print(json.dumps({"output": str(output), "blocks": len(model.blocks), "warnings": model.warnings}, ensure_ascii=False))
+            return 0
+        if args.command == "render-page-model":
+            models = [PageModel.from_dict(json.loads(path.read_text(encoding="utf-8"))) for path in args.models]
+            output = create_positioned_editable_docx(models, args.output)
+            print(json.dumps({"output": str(output), "pages": len(models)}, ensure_ascii=False))
+            return 0
+        if args.command == "visual-regression":
+            model = PageModel.from_dict(json.loads(args.model.read_text(encoding="utf-8")))
+            report = verify_golden_page(
+                args.docx,
+                model,
+                expected_page_count=args.expected_pages,
+                renderer=args.renderer,
+            )
+            print(
+                json.dumps(
+                    {
+                        "docx": str(report.docx),
+                        "editable_text_boxes": report.editable_text_boxes,
+                        "rendered_page_count": report.rendered_page_count,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        if args.command == "representative-regression":
+            manifest = load_representative_manifest(args.manifest)
+            report = run_representative_regressions(manifest, renderer=args.renderer, strict=args.strict)
+            print(
+                json.dumps(
+                    {
+                        "passed_pages": list(report.passed),
+                        "pending_pages": list(report.pending),
+                        "selected_page_count": len(manifest.pages),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        if args.command == "representative-quality-gate":
+            manifest = load_representative_manifest(args.manifest)
+            reports = run_representative_quality_gates(
+                manifest,
+                renderer=args.renderer,
+                require_cer=args.require_cer,
+            )
+            print(
+                json.dumps(
+                    {
+                        "pages": [
+                            {
+                                "page": report.page_number,
+                                "ssim": report.visual_ssim,
+                                "mae": report.visual_mae,
+                                "cer": None if report.cer is None else report.cer.cer,
+                                "cer_reference_characters": None
+                                if report.cer is None
+                                else report.cer.reference_characters,
+                            }
+                            for report in reports
+                        ],
+                        "cer_required": args.require_cer,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        if args.command == "cer-template":
+            manifest = load_representative_manifest(args.manifest)
+            templates = write_cer_templates(manifest, args.output_dir)
+            print(json.dumps({"templates": [str(path) for path in templates]}, ensure_ascii=False))
+            return 0
+        if args.command == "cer-review":
+            manifest = load_representative_manifest(args.manifest)
+            pages = write_cer_review_pages(
+                manifest,
+                args.output_dir,
+                source_pdf=args.source_pdf,
+                independent_ocr_path=args.independent_ocr,
+                dpi=args.dpi,
+                low_confidence_threshold=args.low_confidence_threshold,
+            )
+            print(json.dumps({"review_pages": [str(path) for path in pages]}, ensure_ascii=False))
+            return 0
+        if args.command == "word-render-regression":
+            model = PageModel.from_dict(json.loads(args.model.read_text(encoding="utf-8")))
+            pages = verify_with_microsoft_word(
+                args.docx,
+                model,
+                args.output_pdf,
+                expected_page_count=args.expected_pages,
+            )
+            print(json.dumps({"docx": str(args.docx), "pdf": str(args.output_pdf), "pages": pages}, ensure_ascii=False))
+            return 0
+        if args.command == "representative-word-regression":
+            manifest = load_representative_manifest(args.manifest)
+            reports = run_representative_word_regressions(manifest, args.output_dir)
+            print(
+                json.dumps(
+                    {
+                        "pages": [
+                            {"page": report.page_number, "pdf": str(report.pdf_path), "rendered_page_count": report.rendered_page_count}
+                            for report in reports
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
             return 0
         result = convert_pdf(
             args.source,

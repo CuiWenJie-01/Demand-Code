@@ -1,0 +1,507 @@
+{
+  "schema_version": 2,
+  "workflow": "page_review",
+  "page_number": 10,
+  "page_confirmed": true,
+  "source_image": "source-pages/page-0010.png",
+  "low_confidence_threshold": 0.9,
+  "instructions": "通读原图和预填文本，修正标红处及任何其他错误，最后一次确认整页。预填 OCR 不是人工真值。",
+  "unmatched_independent_block_ids": [],
+  "segments": [
+    {
+      "ordinal": 1,
+      "block_id": "1-line-3",
+      "semantic_role": "question_heading",
+      "bbox": [
+        168,
+        157,
+        951,
+        178
+      ],
+      "confidence": 0.9965031743049622,
+      "reference_text": "7.（2018年国考）某公司按1：3：4的比例订购了一批红色、蓝色、黑色的签字笔，实"
+    },
+    {
+      "ordinal": 2,
+      "block_id": "1-line-4",
+      "semantic_role": "question_body",
+      "bbox": [
+        130,
+        193,
+        951,
+        214
+      ],
+      "confidence": 0.9940388202667236,
+      "reference_text": "际使用时发现三种颜色的笔消耗比例为1：4：5。当某种颜色的签字笔用完时，发现另两种"
+    },
+    {
+      "ordinal": 3,
+      "block_id": "1-line-5",
+      "semantic_role": "question_body",
+      "bbox": [
+        131,
+        232,
+        951,
+        249
+      ],
+      "confidence": 0.9893929362297058,
+      "reference_text": "颜色的签字笔共剩下100盒。此时又购进三种颜色签字笔总共900盒，从而使三种颜色的签字"
+    },
+    {
+      "ordinal": 4,
+      "block_id": "1-line-6",
+      "semantic_role": "question_body",
+      "bbox": [
+        130,
+        266,
+        538,
+        286
+      ],
+      "confidence": 0.994171679019928,
+      "reference_text": "笔可以同时用完。问新购进黑色签字笔多少盒？"
+    },
+    {
+      "ordinal": 5,
+      "block_id": "1-line-7",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        879,
+        266,
+        900,
+        287
+      ],
+      "confidence": 0.6990067362785339,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 6,
+      "block_id": "1-line-8",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        933,
+        266,
+        950,
+        286
+      ],
+      "confidence": 0.6530502438545227,
+      "reference_text": "）"
+    },
+    {
+      "ordinal": 7,
+      "block_id": "2-line-9",
+      "semantic_role": "",
+      "bbox": [
+        166,
+        302,
+        237,
+        324
+      ],
+      "confidence": 0.9597155451774597,
+      "reference_text": "A. 450"
+    },
+    {
+      "ordinal": 8,
+      "block_id": "2-line-10",
+      "semantic_role": "",
+      "bbox": [
+        371,
+        300,
+        443,
+        325
+      ],
+      "confidence": 0.9676194190979004,
+      "reference_text": "B. 425"
+    },
+    {
+      "ordinal": 9,
+      "block_id": "2-line-11",
+      "semantic_role": "",
+      "bbox": [
+        582,
+        302,
+        650,
+        324
+      ],
+      "confidence": 0.949323832988739,
+      "reference_text": "C. 500"
+    },
+    {
+      "ordinal": 10,
+      "block_id": "2-line-12",
+      "semantic_role": "",
+      "bbox": [
+        786,
+        300,
+        857,
+        324
+      ],
+      "confidence": 0.9310131669044495,
+      "reference_text": "D. 475"
+    },
+    {
+      "ordinal": 11,
+      "block_id": "5-line-15",
+      "semantic_role": "callout_body",
+      "bbox": [
+        275,
+        398,
+        951,
+        421
+      ],
+      "confidence": 0.992723286151886,
+      "reference_text": "根据“三种颜色的笔消耗比例为1：4：5”可知，若三种颜色的签字笔同"
+    },
+    {
+      "ordinal": 12,
+      "block_id": "5-line-16",
+      "semantic_role": "callout_body",
+      "bbox": [
+        132,
+        438,
+        952,
+        455
+      ],
+      "confidence": 0.998604416847229,
+      "reference_text": "时用完，则黑色签字笔的数量应为三种颜色签字笔总数的一半。根据“某公司按1：3：4"
+    },
+    {
+      "ordinal": 13,
+      "block_id": "5-line-17",
+      "semantic_role": "callout_body",
+      "bbox": [
+        132,
+        473,
+        950,
+        490
+      ],
+      "confidence": 0.9991565942764282,
+      "reference_text": "的比例订购了一批红色、蓝色、黑色的签字笔”可知，在第一次采购中，黑色签字笔的数量"
+    },
+    {
+      "ordinal": 14,
+      "block_id": "5-line-18",
+      "semantic_role": "callout_body",
+      "bbox": [
+        133,
+        508,
+        950,
+        528
+      ],
+      "confidence": 0.9998496770858765,
+      "reference_text": "占第一次采购总数的一半，因此在第二次采购中，黑色签字笔的数量也应该是第二次采购总"
+    },
+    {
+      "ordinal": 15,
+      "block_id": "5-line-19",
+      "semantic_role": "callout_body",
+      "bbox": [
+        130,
+        544,
+        806,
+        564
+      ],
+      "confidence": 0.999505877494812,
+      "reference_text": "数的一半。第二次一共采购了900盒签字笔，黑色签字笔的数量应为450盒。"
+    },
+    {
+      "ordinal": 16,
+      "block_id": "6-talk-label-47",
+      "semantic_role": "callout_answer",
+      "bbox": [
+        273.90667724609375,
+        593.16455078125,
+        290.72381591796875,
+        615.387451171875
+      ],
+      "confidence": 0.8745691776275635,
+      "reference_text": "A"
+    },
+    {
+      "ordinal": 17,
+      "block_id": "7-focused-ocr-1",
+      "semantic_role": "callout_body",
+      "bbox": [
+        278,
+        643,
+        951,
+        662
+      ],
+      "confidence": 0.9998663663864136,
+      "reference_text": "本题考查的是数字计算，在解题中不要盲目下手，需要仔细分析，找出题目"
+    },
+    {
+      "ordinal": 18,
+      "block_id": "7-line-21",
+      "semantic_role": "callout_body",
+      "bbox": [
+        131,
+        680,
+        817,
+        700
+      ],
+      "confidence": 0.999144434928894,
+      "reference_text": "中暗含的规律性特征，通过分析各种颜色的笔所占比例求解，可以减少计算量。"
+    },
+    {
+      "ordinal": 19,
+      "block_id": "8-line-22",
+      "semantic_role": "question_heading",
+      "bbox": [
+        168,
+        751,
+        950,
+        774
+      ],
+      "confidence": 0.9992139339447021,
+      "reference_text": "8.（2018年北京市考）张某和李某在同一家公司工作，其2017年的月薪都是10000元。"
+    },
+    {
+      "ordinal": 20,
+      "block_id": "8-line-23",
+      "semantic_role": "question_body",
+      "bbox": [
+        131,
+        791,
+        949,
+        811
+      ],
+      "confidence": 0.9987428784370422,
+      "reference_text": "已知张某和李某加入公司第一年的月薪都是4000元，张某每年的月薪都比上一年上涨Y元，"
+    },
+    {
+      "ordinal": 21,
+      "block_id": "8-line-24",
+      "semantic_role": "question_body",
+      "bbox": [
+        131,
+        830,
+        820,
+        850
+      ],
+      "confidence": 0.9955285787582397,
+      "reference_text": "而李某每年的月薪都比上一年上涨Y+200元。则张某在公司最少工作了多少年？"
+    },
+    {
+      "ordinal": 22,
+      "block_id": "8-line-25",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        878,
+        831,
+        898,
+        849
+      ],
+      "confidence": 0.7443511486053467,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 23,
+      "block_id": "8-line-25-reconstructed-pair",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        932,
+        831,
+        951,
+        849
+      ],
+      "confidence": null,
+      "reference_text": "）"
+    },
+    {
+      "ordinal": 24,
+      "block_id": "9-line-26",
+      "semantic_role": "",
+      "bbox": [
+        164,
+        868,
+        220,
+        892
+      ],
+      "confidence": 0.907666027545929,
+      "reference_text": "A. 6"
+    },
+    {
+      "ordinal": 25,
+      "block_id": "9-line-27",
+      "semantic_role": "",
+      "bbox": [
+        370,
+        867,
+        424,
+        892
+      ],
+      "confidence": 0.8881313800811768,
+      "reference_text": "B. 5"
+    },
+    {
+      "ordinal": 26,
+      "block_id": "9-line-28",
+      "semantic_role": "",
+      "bbox": [
+        582,
+        869,
+        646,
+        890
+      ],
+      "confidence": 0.8577143549919128,
+      "reference_text": "C. 4"
+    },
+    {
+      "ordinal": 27,
+      "block_id": "9-line-30",
+      "semantic_role": "",
+      "bbox": [
+        819,
+        870,
+        880,
+        889
+      ],
+      "confidence": 0.9996939897537231,
+      "reference_text": "D. 3"
+    },
+    {
+      "ordinal": 28,
+      "block_id": "12-focused-ocr-2",
+      "semantic_role": "callout_body",
+      "bbox": [
+        278,
+        974,
+        950,
+        996
+      ],
+      "confidence": 0.991895318031311,
+      "reference_text": "根据题意可知，两人的月薪都增长了10000—4000=6000元，设张某、李某"
+    },
+    {
+      "ordinal": 29,
+      "block_id": "12-line-34",
+      "semantic_role": "callout_body",
+      "bbox": [
+        130,
+        1009,
+        949,
+        1029
+      ],
+      "confidence": 0.9834668040275574,
+      "reference_text": "在公司分别工作了m年、n年，m、n都是正整数，则mY=6000=n（Y+200）。将四个选项分别"
+    },
+    {
+      "ordinal": 30,
+      "block_id": "12-line-35",
+      "semantic_role": "callout_body",
+      "bbox": [
+        124,
+        1040,
+        196,
+        1072
+      ],
+      "confidence": 0.9989398121833801,
+      "reference_text": "代入。"
+    },
+    {
+      "ordinal": 31,
+      "block_id": "13-line-36",
+      "semantic_role": "callout_body",
+      "bbox": [
+        168,
+        1082,
+        949,
+        1101
+      ],
+      "confidence": 0.9982296824455261,
+      "reference_text": "A项，m为6年，则Y=1000元，李某月薪涨幅为Y+200=1200，计算可得n=5。符合题意，"
+    },
+    {
+      "ordinal": 32,
+      "block_id": "13-line-37",
+      "semantic_role": "callout_body",
+      "bbox": [
+        127,
+        1113,
+        183,
+        1139
+      ],
+      "confidence": 0.9982866644859314,
+      "reference_text": "当选。"
+    },
+    {
+      "ordinal": 33,
+      "block_id": "14-line-38",
+      "semantic_role": "callout_body",
+      "bbox": [
+        167,
+        1154,
+        950,
+        1174
+      ],
+      "confidence": 0.9982677102088928,
+      "reference_text": "B项，m为5年，则Y=1200元，李某月薪涨幅为Y+200=1400，计算可得"
+    },
+    {
+      "ordinal": 34,
+      "block_id": "14-line-39",
+      "semantic_role": "callout_body",
+      "bbox": [
+        128,
+        1185,
+        595,
+        1206
+      ],
+      "confidence": 0.9933536648750305,
+      "reference_text": "n=6000÷1400≈4.29，不是整数。不符合题意，排除。"
+    },
+    {
+      "ordinal": 35,
+      "block_id": "15-line-40",
+      "semantic_role": "callout_body",
+      "bbox": [
+        166,
+        1215,
+        952,
+        1239
+      ],
+      "confidence": 0.9869636297225952,
+      "reference_text": "C项，m为4年，则Y=1500元，李某月薪涨幅为Y+200=1700，计算可得"
+    },
+    {
+      "ordinal": 36,
+      "block_id": "15-line-42",
+      "semantic_role": "callout_body",
+      "bbox": [
+        129,
+        1253,
+        596,
+        1275
+      ],
+      "confidence": 0.9945598840713501,
+      "reference_text": "n=6000÷1700≈3.53，不是整数。不符合题意，排除。"
+    },
+    {
+      "ordinal": 37,
+      "block_id": "16-line-43",
+      "semantic_role": "callout_body",
+      "bbox": [
+        167,
+        1289,
+        952,
+        1311
+      ],
+      "confidence": 0.9982082843780518,
+      "reference_text": "D项，m为3年，则Y=2000元，李某月薪涨幅为Y+200=2200，计算可得"
+    },
+    {
+      "ordinal": 38,
+      "block_id": "16-line-45",
+      "semantic_role": "callout_body",
+      "bbox": [
+        128,
+        1323,
+        596,
+        1347
+      ],
+      "confidence": 0.9922916889190674,
+      "reference_text": "n=6000÷2200≈2.73，不是整数。不符合题意，排除。"
+    }
+  ],
+  "reviewed_at": "2026-08-31T08:02:48.975Z"
+}

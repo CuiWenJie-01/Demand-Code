@@ -28,6 +28,28 @@ h2 { font-size: 18px; margin-bottom: 8px; }
 select { width: 100%; border: 1px solid #d8cfdb; border-radius: 9px; background: #fff; padding: 10px; color: #1d1c21; }
 .engine-card { padding: 24px 28px; }
 .engine-card ul { padding-left: 20px; color: #514a56; line-height: 1.8; margin-bottom: 0; }
+.cer-entry { padding: 24px 28px; margin-top: 18px; display: flex; align-items: center; justify-content: space-between; gap: 22px; }
+.cer-entry h2 { margin-bottom: 7px; }
+.cer-entry p:last-child { color: #68626f; line-height: 1.55; margin-bottom: 0; }
+.secondary-button { background: #fff; border: 1px solid #c31373; color: #a50e61; border-radius: 10px; padding: 11px 16px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.secondary-button:hover { background: #fff2f8; }
+.secondary-button:disabled { color: #987c8d; border-color: #d9ccd8; cursor: not-allowed; background: #faf7fa; }
+.text-button { background: none; color: #9f0e5d; border: 0; padding: 0; font-weight: 700; cursor: pointer; margin-bottom: 18px; }
+.cer-shell { width: min(1500px, calc(100% - 48px)); margin: 0 auto; padding: 32px 0 36px; }
+.cer-header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:20px; }
+.cer-header h1 { font-size: clamp(30px, 4vw, 44px); margin-bottom: 8px; }
+.progress-chip { background:#211a23; color:#fff; padding:13px 17px; border-radius:14px; display:grid; gap:2px; text-align:right; min-width:100px; }
+.progress-chip strong { font-size:21px; }.progress-chip span { color:#d9ccd8; font-size:12px; }
+.cer-setup { padding:16px; display:grid; grid-template-columns:minmax(160px,1fr) auto minmax(160px,1fr) auto; gap:12px; align-items:center; }
+.path-choice { padding:8px 10px; min-width:0; display:grid; gap:4px; }.path-choice span { color:#716a75; font-size:12px; }.path-choice strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
+.inline-message { padding:11px 14px; border-radius:10px; margin:14px 0 0; }.inline-message.error { background:#fff0ef; color:#9f3028; }.inline-message.success { background:#eaf8ef; color:#227244; }
+.cer-layout { display:grid; grid-template-columns:300px minmax(0, 1fr); gap:18px; margin-top:18px; align-items:start; }
+.page-list { padding:10px; max-height:calc(100vh - 255px); overflow:auto; position:sticky; top:12px; }.list-heading { display:flex; align-items:center; justify-content:space-between; padding:8px 10px 11px; }.list-heading h2 { margin:0; }.list-heading span { font-size:12px; color:#716a75; }
+.page-item { width:100%; text-align:left; display:grid; grid-template-columns:25px minmax(0,1fr); gap:8px; border:0; border-radius:10px; padding:10px; background:transparent; cursor:pointer; color:#302936; }.page-item:hover { background:#faf4f8; }.page-item.active { background:#f8e5f0; }.page-item:disabled { cursor:not-allowed; opacity:.65; }.page-item strong,.page-item small,.page-item em { display:block; }.page-item strong { font-size:14px; }.page-item small { color:#68626f; line-height:1.35; margin-top:3px; }.page-item em { color:#9b778a; font-size:11px; font-style:normal; margin-top:4px; }.check { color:#ba9cac; font-size:20px; line-height:16px; }.check.complete { color:#237a4d; font-weight:800; }
+.review-workspace { min-width:0; }.loading-card,.empty-review { padding:32px; }.empty-review p,.loading-card { color:#68626f; }.review-title { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin:3px 4px 12px; }.review-title h2 { margin-bottom:5px; }.review-title p { margin:0; color:#68626f; }.badges { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; }.badges span,.segment-meta em { padding:4px 8px; border-radius:99px; background:#eee9f0; font-style:normal; font-size:12px; }.badges .flag,.segment-meta em { background:#ffe9e7; color:#a32920; }
+.review-columns { display:grid; grid-template-columns:minmax(340px, .88fr) minmax(430px, 1.12fr); gap:16px; align-items:start; }.image-panel,.transcript-panel { padding:16px; }.image-panel h2,.transcript-panel h2 { margin-bottom:7px; }.transcript-panel > p,.image-caption { color:#68626f; font-size:13px; line-height:1.5; }.source-frame { position:relative; background:#f3edf4; border-radius:9px; overflow:hidden; }.source-frame img { width:100%; height:auto; display:block; }.source-highlight { position:absolute; border:2px solid #e04a3f; border-radius:3px; box-shadow:0 0 0 1px rgb(255 255 255 / 75%); pointer-events:none; }.image-caption { margin:10px 0 0; }
+.segment-list { max-height:calc(100vh - 330px); min-height:440px; overflow:auto; padding-right:4px; }.review-segment { border-top:1px solid #ede7ee; padding:10px 0; }.review-segment:first-child { border-top:0; }.segment-meta { display:flex; justify-content:space-between; gap:8px; color:#716a75; font-size:12px; margin-bottom:5px; }.segment-meta em { display:inline-block; margin-left:4px; }.review-segment textarea { width:100%; min-height:46px; resize:vertical; border:1px solid #d8cedc; border-radius:7px; padding:8px; font:14px/1.48 "Microsoft YaHei UI",sans-serif; color:#25202a; }.review-segment.attention textarea { border:2px solid #df554b; background:#fffafa; }.secondary-ocr { color:#665e68; font-size:12px; margin:6px 0 0; background:#faf8fb; padding:6px; border-radius:6px; }
+.confirm-bar { position:sticky; bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:15px; padding:14px 16px; background:#211a23; border-radius:12px; color:#ded4df; box-shadow:0 10px 28px rgb(33 26 35 / 18%); }
 .action-bar { position: sticky; bottom: 20px; margin-top: 28px; display: flex; justify-content: space-between; gap: 16px; align-items: center; background: #211a23; color: #fff; padding: 18px 22px; border-radius: 16px; box-shadow: 0 12px 30px rgb(33 26 35 / 20%); }
 .action-bar div { display: grid; gap: 5px; }
 .action-bar span { color: #d9ccd8; font-size: 14px; }
@@ -40,4 +62,7 @@ select { width: 100%; border: 1px solid #d8cfdb; border-radius: 9px; background:
   .settings-grid { grid-template-columns: 1fr; }
   .primary-button { width: 100%; }
   .file-summary { flex-direction: column; }
+  .cer-entry,.cer-header,.confirm-bar { display:grid; grid-template-columns:1fr; }
+  .cer-shell { width:min(100% - 28px, 1500px); padding-top:24px; }
+  .cer-setup,.cer-layout,.review-columns { grid-template-columns:1fr; }.page-list { max-height:none; position:static; }.segment-list { max-height:none; min-height:0; }.confirm-bar { position:static; }.badges { justify-content:flex-start; }
 }

@@ -1,0 +1,118 @@
+{
+  "schema_version": 2,
+  "source_page_count": 381,
+  "pages": [
+    {
+      "page_number": 1,
+      "coverage": ["cover"],
+      "description": "封面与大面积留白；以整页源 PDF 截图保真",
+      "model_path": "../../runtime/representative-baselines/page-0001/page-model-源PDF整页截图-v2.json",
+      "docx_path": "../../runtime/representative-baselines/page-0001/page-0001-源PDF整页截图-v2.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0001/render-qa-源PDF整页截图-v2/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0001.json"
+    },
+    {
+      "page_number": 10,
+      "coverage": ["exam_question", "watermark", "golden"],
+      "description": "题号、谈解析/答案/提示、侧栏与页码色条；首个黄金样页",
+      "golden": true,
+      "model_path": "../../runtime/qa-page10-final-one-page/page-model-源PDF对照修复-v3.json",
+      "docx_path": "../../runtime/qa-page10-final-one-page/第10页-源PDF对照修复-v3.docx",
+      "visual_baseline_path": "../../runtime/qa-page10-final-one-page/render-qa-源PDF对照修复-v3/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0010.json"
+    },
+    {
+      "page_number": 40,
+      "coverage": ["formula", "table", "exam_question", "golden"],
+      "description": "数值表格、行程公式与连续题目；第三个黄金样页",
+      "golden": true,
+      "model_path": "../../runtime/representative-baselines/page-0040/page-model-v7.json",
+      "docx_path": "../../runtime/representative-baselines/page-0040/page-0040-可编辑版-修复版-v7.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0040/render-qa-fixed-v7/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0040.json"
+    },
+    {
+      "page_number": 80,
+      "coverage": ["watermark", "exam_question"],
+      "description": "水印穿过高密度正文",
+      "model_path": "../../runtime/representative-baselines/page-0080/page-model-可编辑版-源PDF公式与对齐修复-v7.json",
+      "docx_path": "../../runtime/representative-baselines/page-0080/page-0080-可编辑版-源PDF公式与对齐修复-v7.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0080/render-qa-源PDF公式与对齐修复-v7/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0080.json"
+    },
+    {
+      "page_number": 120,
+      "coverage": ["diagram", "exam_question"],
+      "description": "几何图形、选项与谈解析/提示标签",
+      "model_path": "../../runtime/representative-baselines/page-0120/page-model-v12.json",
+      "docx_path": "../../runtime/representative-baselines/page-0120/page-0120-可编辑版-v12.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0120/render-qa-v12/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0120.json"
+    },
+    {
+      "page_number": 160,
+      "coverage": ["exam_question", "dense_text", "watermark"],
+      "description": "普通高密度题目/解析页；源 PDF 对照修复谈徽标、答案/提示/解析标签、指数行、题干答案括号、解析长行与选项长行右侧对齐的可编辑正文基线",
+      "model_path": "../../runtime/representative-baselines/page-0160/page-model-可编辑版-选项右侧对齐修复-v14.json",
+      "docx_path": "../../runtime/representative-baselines/page-0160/page-0160-可编辑版-选项右侧对齐修复-v14.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0160/render-qa-选项右侧对齐修复-v14/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0160.json"
+    },
+    {
+      "page_number": 200,
+      "coverage": ["exam_question", "dense_text", "watermark"],
+      "description": "多题连续排版；谈徽标图形保真、标签与星级可编辑、缺失解析首行恢复、题干括号对齐及竖排侧栏回退基线",
+      "model_path": "../../runtime/representative-baselines/page-0200/page-model-v12.json",
+      "docx_path": "../../runtime/representative-baselines/page-0200/page-0200-可编辑版-谈解析首行恢复-v12.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0200/render-qa-v12/page-1.png",
+      "minimum_ssim": 0.80,
+      "cer_annotation_path": "cer_annotations/page-0200.json"
+    },
+    {
+      "page_number": 240,
+      "coverage": ["exam_question", "dense_text"],
+      "description": "长解析与连续正文；长行右侧对齐、谈徽标与题干同行右对齐答案括号修复的可编辑基线",
+      "model_path": "../../runtime/representative-baselines/page-0240/page-model-源PDF对照修复-v4.json",
+      "docx_path": "../../runtime/representative-baselines/page-0240/page-0240-可编辑版-源PDF对照修复-v4.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0240/render-qa-源PDF对照修复-v4/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0240.json"
+    },
+    {
+      "page_number": 300,
+      "coverage": ["chart", "formula", "exam_question", "golden"],
+      "description": "柱状图、分式公式与题目解析；第二个黄金样页",
+      "golden": true,
+      "model_path": "../../runtime/representative-baselines/page-0300/page-model.json",
+      "docx_path": "../../runtime/representative-baselines/page-0300/page-0300-可编辑版-修复版.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0300/render-qa-fixed/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0300.json"
+    },
+    {
+      "page_number": 330,
+      "coverage": ["chart", "table", "formula"],
+      "description": "折线图、柱状图、表格与公式；图注粗体编号、间隔及完整字形，右侧章节分段字距均按源 PDF 修复",
+      "model_path": "../../runtime/representative-baselines/page-0330/page-model-源PDF对照修复-v3.json",
+      "docx_path": "../../runtime/representative-baselines/page-0330/page-0330-可编辑版-源PDF对照修复-v3.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0330/render-qa-源PDF对照修复-v3/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0330.json"
+    },
+    {
+      "page_number": 360,
+      "coverage": ["exam_question", "dense_text"],
+      "description": "后段普通题目页；第 5 题 A、B 对齐且已删除解析段误重建答题括号的可编辑基线",
+      "model_path": "../../runtime/representative-baselines/page-0360/page-model-源PDF对照修复-v6.json",
+      "docx_path": "../../runtime/representative-baselines/page-0360/page-0360-可编辑版-源PDF对照修复-v6.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0360/render-qa-源PDF对照修复-v6/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0360.json"
+    },
+    {
+      "page_number": 381,
+      "coverage": ["last_page", "watermark"],
+      "description": "文档末页与结束版式；提示标签、第五部分资料分析竖排栏及页码已按源 PDF 修复",
+      "model_path": "../../runtime/representative-baselines/page-0381/page-model-源PDF对照修复-v4.json",
+      "docx_path": "../../runtime/representative-baselines/page-0381/page-0381-可编辑版-源PDF对照修复-v4.docx",
+      "visual_baseline_path": "../../runtime/representative-baselines/page-0381/render-qa-源PDF对照修复-v4/page-1.png",
+      "cer_annotation_path": "cer_annotations/page-0381.json"
+    }
+  ]
+}

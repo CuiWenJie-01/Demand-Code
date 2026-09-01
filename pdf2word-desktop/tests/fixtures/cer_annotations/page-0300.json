@@ -1,0 +1,195 @@
+{
+  "schema_version": 2,
+  "workflow": "page_review",
+  "page_number": 300,
+  "page_confirmed": true,
+  "source_image": "source-pages/page-0300.png",
+  "low_confidence_threshold": 0.9,
+  "instructions": "通读原图和预填文本，修正标红处及任何其他错误，最后一次确认整页。预填 OCR 不是人工真值。",
+  "unmatched_independent_block_ids": [],
+  "segments": [
+    {
+      "ordinal": 1,
+      "block_id": "4-line-24",
+      "semantic_role": "callout_body",
+      "bbox": [
+        255,
+        765,
+        949,
+        784
+      ],
+      "confidence": 0.9852878451347351,
+      "reference_text": "根据资料可得，2017年10~12月份全国铁路旅客发送量分别为27621、22703、"
+    },
+    {
+      "ordinal": 2,
+      "block_id": "4-line-25",
+      "semantic_role": "callout_body",
+      "bbox": [
+        129,
+        803,
+        950,
+        823
+      ],
+      "confidence": 0.998482346534729,
+      "reference_text": "23219万人，对比四个选项中的白色柱状图，排除B、C两项。2017年10~12月份全国铁路货"
+    },
+    {
+      "ordinal": 3,
+      "block_id": "4-line-26",
+      "semantic_role": "callout_body",
+      "bbox": [
+        130,
+        843,
+        921,
+        863
+      ],
+      "confidence": 0.9994046092033386,
+      "reference_text": "物总发送量分别为32199、30774、30387万吨，对比四个选项中的灰色柱状图，排除D项。"
+    },
+    {
+      "ordinal": 4,
+      "block_id": "8-line-49",
+      "semantic_role": "callout_body",
+      "bbox": [
+        267.74170860877405,
+        945.62939453125,
+        744.3455810546875,
+        966.935302734375
+      ],
+      "confidence": 0.9994973540306091,
+      "reference_text": "本题考查的是数、图的转换，要注意图标的表示对象。"
+    },
+    {
+      "ordinal": 5,
+      "block_id": "9-line-29",
+      "semantic_role": "question_heading",
+      "bbox": [
+        168,
+        1018,
+        724,
+        1038
+      ],
+      "confidence": 0.9929558634757996,
+      "reference_text": "4.2016年全国铁路货物总周转量当年累计完成约多少亿吨公里?"
+    },
+    {
+      "ordinal": 6,
+      "block_id": "9-line-30",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        878,
+        1016,
+        901,
+        1039
+      ],
+      "confidence": 0.734252393245697,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 7,
+      "block_id": "9-line-31",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        925,
+        1017,
+        950,
+        1039
+      ],
+      "confidence": 0.709848165512085,
+      "reference_text": "）"
+    },
+    {
+      "ordinal": 8,
+      "block_id": "10-line-32",
+      "semantic_role": "",
+      "bbox": [
+        165,
+        1056,
+        248,
+        1081
+      ],
+      "confidence": 0.9777085185050964,
+      "reference_text": "A. 8018"
+    },
+    {
+      "ordinal": 9,
+      "block_id": "10-line-33",
+      "semantic_role": "",
+      "bbox": [
+        372,
+        1056,
+        463,
+        1080
+      ],
+      "confidence": 0.9757288098335266,
+      "reference_text": "B. 21435"
+    },
+    {
+      "ordinal": 10,
+      "block_id": "10-line-34",
+      "semantic_role": "",
+      "bbox": [
+        580,
+        1056,
+        670,
+        1080
+      ],
+      "confidence": 0.9701326489448547,
+      "reference_text": "C. 23797"
+    },
+    {
+      "ordinal": 11,
+      "block_id": "10-line-35",
+      "semantic_role": "",
+      "bbox": [
+        787,
+        1058,
+        884,
+        1079
+      ],
+      "confidence": 0.9982637166976929,
+      "reference_text": "D.333211"
+    },
+    {
+      "ordinal": 12,
+      "block_id": "13-focused-ocr-1",
+      "semantic_role": "callout_body",
+      "bbox": [
+        276,
+        1163,
+        948,
+        1184
+      ],
+      "confidence": 0.9999393820762634,
+      "reference_text": "根据表3-3可得，2017年12月，累计货物总周转量即全年货物总周转量为"
+    },
+    {
+      "ordinal": 13,
+      "block_id": "13-line-41",
+      "semantic_role": "callout_body",
+      "bbox": [
+        129,
+        1206,
+        792,
+        1226
+      ],
+      "confidence": 0.9994820356369019,
+      "reference_text": "26962.20亿吨公里，同比增长13.3%。因此，2016年全年货物总周转量约为"
+    },
+    {
+      "ordinal": 14,
+      "block_id": "13-line-46",
+      "semantic_role": "callout_body",
+      "bbox": [
+        130,
+        1254,
+        480,
+        1274
+      ],
+      "confidence": 0.9994463324546814,
+      "reference_text": "亿吨公里，计算前两位可得答案为C项。"
+    }
+  ],
+  "reviewed_at": "2026-08-31T08:27:35.302Z"
+}

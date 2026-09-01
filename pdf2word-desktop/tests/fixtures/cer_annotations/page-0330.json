@@ -1,0 +1,143 @@
+{
+  "schema_version": 2,
+  "workflow": "page_review",
+  "page_number": 330,
+  "page_confirmed": true,
+  "source_image": "source-pages/page-0330.png",
+  "low_confidence_threshold": 0.9,
+  "instructions": "通读原图和预填文本，修正标红处及任何其他错误，最后一次确认整页。预填 OCR 不是人工真值。",
+  "unmatched_independent_block_ids": [],
+  "segments": [
+    {
+      "ordinal": 1,
+      "block_id": "2",
+      "semantic_role": "",
+      "bbox": [
+        375,
+        643,
+        1112,
+        671
+      ],
+      "confidence": null,
+      "reference_text": "图 4-8   2009—2016 年全省医疗卫生机构数（单位：万个）"
+    },
+    {
+      "ordinal": 2,
+      "block_id": "4",
+      "semantic_role": "",
+      "bbox": [
+        348,
+        1145,
+        1141,
+        1172
+      ],
+      "confidence": null,
+      "reference_text": "图 4-9   2009—2016 年全省医疗卫生机构床位数（单位：万张）"
+    },
+    {
+      "ordinal": 3,
+      "block_id": "6",
+      "semantic_role": "",
+      "bbox": [
+        283,
+        1602,
+        1205,
+        1630
+      ],
+      "confidence": null,
+      "reference_text": "图 4-10  2012—2016 年全省医疗卫生机构卫生技术人员数（单位：万人）"
+    },
+    {
+      "ordinal": 4,
+      "block_id": "7-line-93",
+      "semantic_role": "question_heading",
+      "bbox": [
+        236,
+        1726,
+        1116,
+        1756
+      ],
+      "confidence": 0.9913426041603088,
+      "reference_text": "1.2010—2016年，全省医疗卫生机构数同比上一年增长率最高的是哪年?"
+    },
+    {
+      "ordinal": 5,
+      "block_id": "7-line-93-reconstructed-open",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        1228,
+        1732,
+        1248,
+        1754
+      ],
+      "confidence": null,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 6,
+      "block_id": "7-line-93-reconstructed-close",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        1282,
+        1732,
+        1302,
+        1754
+      ],
+      "confidence": null,
+      "reference_text": "）"
+    },
+    {
+      "ordinal": 7,
+      "block_id": "8-line-94",
+      "semantic_role": "",
+      "bbox": [
+        232,
+        1780,
+        344,
+        1811
+      ],
+      "confidence": 0.9502810835838318,
+      "reference_text": "A. 2012"
+    },
+    {
+      "ordinal": 8,
+      "block_id": "8-line-95",
+      "semantic_role": "",
+      "bbox": [
+        517,
+        1778,
+        628,
+        1812
+      ],
+      "confidence": 0.9537345767021179,
+      "reference_text": "B. 2013"
+    },
+    {
+      "ordinal": 9,
+      "block_id": "8-line-96",
+      "semantic_role": "",
+      "bbox": [
+        808,
+        1780,
+        918,
+        1811
+      ],
+      "confidence": 0.9389893412590027,
+      "reference_text": "C. 2014"
+    },
+    {
+      "ordinal": 10,
+      "block_id": "8-line-97",
+      "semantic_role": "",
+      "bbox": [
+        1093,
+        1780,
+        1205,
+        1811
+      ],
+      "confidence": 0.9273774027824402,
+      "reference_text": "D. 2016"
+    }
+  ],
+  "reviewed_at": "2026-08-31T08:28:43.748Z"
+}

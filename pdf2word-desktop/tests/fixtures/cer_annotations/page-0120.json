@@ -1,0 +1,390 @@
+{
+  "schema_version": 2,
+  "workflow": "page_review",
+  "page_number": 120,
+  "page_confirmed": true,
+  "source_image": "source-pages/page-0120.png",
+  "low_confidence_threshold": 0.9,
+  "instructions": "通读原图和预填文本，修正标红处及任何其他错误，最后一次确认整页。预填 OCR 不是人工真值。",
+  "unmatched_independent_block_ids": [],
+  "segments": [
+    {
+      "ordinal": 1,
+      "block_id": "14",
+      "semantic_role": "",
+      "bbox": [
+        533,
+        1064,
+        547,
+        1079
+      ],
+      "confidence": null,
+      "reference_text": "B "
+    },
+    {
+      "ordinal": 2,
+      "block_id": "15",
+      "semantic_role": "",
+      "bbox": [
+        634,
+        1064,
+        648,
+        1080
+      ],
+      "confidence": null,
+      "reference_text": "C "
+    },
+    {
+      "ordinal": 3,
+      "block_id": "16",
+      "semantic_role": "",
+      "bbox": [
+        432,
+        1065,
+        448,
+        1080
+      ],
+      "confidence": null,
+      "reference_text": "A "
+    },
+    {
+      "ordinal": 4,
+      "block_id": "1-line-12",
+      "semantic_role": "",
+      "bbox": [
+        485,
+        272,
+        506,
+        293
+      ],
+      "confidence": 0.9952312111854553,
+      "reference_text": "A"
+    },
+    {
+      "ordinal": 5,
+      "block_id": "2-line-13",
+      "semantic_role": "",
+      "bbox": [
+        582,
+        272,
+        602,
+        291
+      ],
+      "confidence": 0.9989903569221497,
+      "reference_text": "B"
+    },
+    {
+      "ordinal": 6,
+      "block_id": "3-line-14",
+      "semantic_role": "",
+      "bbox": [
+        678,
+        272,
+        699,
+        293
+      ],
+      "confidence": 0.9939140677452087,
+      "reference_text": "C"
+    },
+    {
+      "ordinal": 7,
+      "block_id": "4-line-15",
+      "semantic_role": "",
+      "bbox": [
+        775,
+        272,
+        796,
+        293
+      ],
+      "confidence": 0.9974852800369263,
+      "reference_text": "D"
+    },
+    {
+      "ordinal": 8,
+      "block_id": "5-line-16",
+      "semantic_role": "solution_body",
+      "bbox": [
+        169,
+        316,
+        950,
+        333
+      ],
+      "confidence": 0.9990941286087036,
+      "reference_text": "A项，面1和面3是相对面，不可能同时出现在立体图形，排除。B项，展开图中面1"
+    },
+    {
+      "ordinal": 9,
+      "block_id": "5-line-17",
+      "semantic_role": "solution_body",
+      "bbox": [
+        130,
+        353,
+        950,
+        373
+      ],
+      "confidence": 0.9994148015975952,
+      "reference_text": "和面4的公共边与面1灰色菱形的长对角线平行，选项中面1和面4的公共边与面1灰色菱"
+    },
+    {
+      "ordinal": 10,
+      "block_id": "5-line-18",
+      "semantic_role": "solution_body",
+      "bbox": [
+        130,
+        391,
+        950,
+        412
+      ],
+      "confidence": 0.9993448853492737,
+      "reference_text": "形的长对角线垂直，排除。D项，面1和面3是相对面，不可能同时出现在立体图形，排除。"
+    },
+    {
+      "ordinal": 11,
+      "block_id": "5-line-19",
+      "semantic_role": "solution_short_body",
+      "bbox": [
+        126,
+        428,
+        286,
+        455
+      ],
+      "confidence": 0.9979991912841797,
+      "reference_text": "C项当选。"
+    },
+    {
+      "ordinal": 12,
+      "block_id": "7-line-26",
+      "semantic_role": "callout_body",
+      "bbox": [
+        285,
+        535,
+        951,
+        558
+      ],
+      "confidence": 0.9997777342796326,
+      "reference_text": "本题考查空间重构，既需要考生有空间构图的想象力，还要有对图形的"
+    },
+    {
+      "ordinal": 13,
+      "block_id": "7-line-27",
+      "semantic_role": "callout_body",
+      "bbox": [
+        128,
+        573,
+        228,
+        598
+      ],
+      "confidence": 0.999308705329895,
+      "reference_text": "洞察力。"
+    },
+    {
+      "ordinal": 14,
+      "block_id": "8-line-28",
+      "semantic_role": "question_heading",
+      "bbox": [
+        169,
+        629,
+        951,
+        652
+      ],
+      "confidence": 0.9989824891090393,
+      "reference_text": "16.（2019年国考）左图为6个相同小正方体组合成的多面体，将其从任一面剖开，以下"
+    },
+    {
+      "ordinal": 15,
+      "block_id": "8-line-29",
+      "semantic_role": "question_body",
+      "bbox": [
+        129,
+        669,
+        419,
+        688
+      ],
+      "confidence": 0.9847053289413452,
+      "reference_text": "哪一项不可能是该多面体的截面？"
+    },
+    {
+      "ordinal": 16,
+      "block_id": "8-line-30",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        872,
+        667,
+        892,
+        691
+      ],
+      "confidence": 0.6513685584068298,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 17,
+      "block_id": "8-line-30-split-close",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        926,
+        667,
+        946,
+        691
+      ],
+      "confidence": null,
+      "reference_text": "）"
+    },
+    {
+      "ordinal": 18,
+      "block_id": "11-line-36",
+      "semantic_role": "callout_index",
+      "bbox": [
+        281,
+        848,
+        464,
+        875
+      ],
+      "confidence": 0.9957664608955383,
+      "reference_text": "易错指数★★★★☆"
+    },
+    {
+      "ordinal": 19,
+      "block_id": "11-line-37",
+      "semantic_role": "callout_index",
+      "bbox": [
+        495,
+        851,
+        682,
+        872
+      ],
+      "confidence": 0.9619591236114502,
+      "reference_text": "易考指数★★★★☆"
+    },
+    {
+      "ordinal": 20,
+      "block_id": "12-line-39",
+      "semantic_role": "callout_body",
+      "bbox": [
+        286,
+        902,
+        950,
+        922
+      ],
+      "confidence": 0.999862790107727,
+      "reference_text": "本题所给图形并不复杂，可用绘图法对应四个选项一一画出截面。经过绘图"
+    },
+    {
+      "ordinal": 21,
+      "block_id": "12-line-40-merged-fragments",
+      "semantic_role": "callout_body",
+      "bbox": [
+        132,
+        943,
+        646,
+        960
+      ],
+      "confidence": 0.9979270696640015,
+      "reference_text": "我们发现，A、B、C三项都是该多面体的截面（见下图），"
+    },
+    {
+      "ordinal": 22,
+      "block_id": "12-line-40-merged-fragments-focused-tail",
+      "semantic_role": "callout_body_fragment",
+      "bbox": [
+        650,
+        937,
+        866,
+        975
+      ],
+      "confidence": null,
+      "reference_text": "排除A、B、C三项。"
+    },
+    {
+      "ordinal": 23,
+      "block_id": "18-line-49",
+      "semantic_role": "callout_answer",
+      "bbox": [
+        278.3333333333333,
+        1109,
+        294,
+        1125
+      ],
+      "confidence": 0.9975881576538086,
+      "reference_text": "D"
+    },
+    {
+      "ordinal": 24,
+      "block_id": "19-line-51",
+      "semantic_role": "callout_body",
+      "bbox": [
+        280.1142857142857,
+        1151,
+        951,
+        1175
+      ],
+      "confidence": 0.9997458457946777,
+      "reference_text": "本题考查多面体截面推理，虽然考的是截面，但同时也考视图。找准看图形"
+    },
+    {
+      "ordinal": 25,
+      "block_id": "19-line-52",
+      "semantic_role": "callout_body",
+      "bbox": [
+        131,
+        1192,
+        506,
+        1211
+      ],
+      "confidence": 0.9997159838676453,
+      "reference_text": "的角度，就能准确得出正确答案。"
+    },
+    {
+      "ordinal": 26,
+      "block_id": "20-line-54",
+      "semantic_role": "question_heading",
+      "bbox": [
+        171,
+        1264,
+        950,
+        1284
+      ],
+      "confidence": 0.9989954829216003,
+      "reference_text": "17.（2019年国考）下图为同样大小的正方体堆叠而成的多面体正视图和后视图。该多面"
+    },
+    {
+      "ordinal": 27,
+      "block_id": "20-line-56",
+      "semantic_role": "question_body",
+      "bbox": [
+        131,
+        1302,
+        819,
+        1321
+      ],
+      "confidence": 0.9892770051956177,
+      "reference_text": "体可拆分为①、②、③和④共4个多面体的组合，问下列哪一项能填入问号处？"
+    },
+    {
+      "ordinal": 28,
+      "block_id": "20-line-57",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        871,
+        1301,
+        891,
+        1322
+      ],
+      "confidence": 0.6789863705635071,
+      "reference_text": "（"
+    },
+    {
+      "ordinal": 29,
+      "block_id": "20-line-57-split-close",
+      "semantic_role": "answer_blank",
+      "bbox": [
+        925,
+        1301,
+        945,
+        1322
+      ],
+      "confidence": null,
+      "reference_text": "）"
+    }
+  ],
+  "reviewed_at": "2026-08-31T08:22:53.302Z"
+}
