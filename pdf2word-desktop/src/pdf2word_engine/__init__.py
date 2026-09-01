@@ -1,13 +1,12 @@
 """PDF2Word Desktop conversion engine."""
 
 from .models import PdfKind, PreflightReport
-from .pipeline import ConversionResult, convert_pdf
+from .pipeline import create_source_first_pilot
 from .preflight import inspect_pdf
 
 __all__ = [
-    "ConversionResult",
     "PdfKind",
     "PreflightReport",
-    "convert_pdf",
+    "create_source_first_pilot",
     "inspect_pdf",
 ]

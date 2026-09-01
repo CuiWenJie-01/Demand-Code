@@ -104,3 +104,89 @@ class QualityTests(unittest.TestCase):
 
         self.assertEqual([block.block_id for block in model.blocks], ["body"])
         self.assertTrue(any(item["block_id"] == "source-watermark" for item in model.debug_records))
+
+    def test_formula_heavy_callout_crop_is_reported_as_formula_fallback(self) -> None:
+        model = PageModel(
+            schema_version=7,
+            page_index=20,
+            size=PageSize(595, 842),
+            source_type=PdfKind.OUTLINED,
+            page_class="formula_heavy",
+            blocks=[
+                PageBlock(
+                    "formula-callout-row",
+                    "talk_callout_tag_image",
+                    (100, 100, 800, 170),
+                    0,
+                    0,
+                    asset_path="formula-row.png",
+                    fallback_mode="callout_first_row_source_image",
+                    selection_reason="fraction retained in source callout row",
+                ),
+                PageBlock("body", "editable_paragraph", (100, 200, 800, 300), 0, 1, text="普通解析正文保持可编辑。"),
+            ],
+        )
+
+        report = editable_quality_report([model])
+
+        self.assertEqual(report["summary"]["formula_fallback_pages"], [21])
+        fallback = report["pages"][0]["image_fallback_blocks"][0]
+        self.assertEqual(fallback["fallback_mode"], "callout_first_row_source_image")
+        self.assertEqual(fallback["bbox"], [100, 100, 800, 170])
+
+    def test_short_formula_fragment_cannot_delete_complete_question_paragraph(self) -> None:
+        model = PageModel(
+            schema_version=7,
+            page_index=6,
+            size=PageSize(595, 842),
+            source_type=PdfKind.OUTLINED,
+            blocks=[
+                PageBlock(
+                    "question",
+                    "editable_paragraph",
+                    (100, 100, 900, 210),
+                    0,
+                    0,
+                    confidence=0.98,
+                    text="1.（2018年广东省考）这是完整题干，必须保留。\n1-5",
+                ),
+                PageBlock("fraction", "editable_paragraph", (110, 160, 150, 210), 0, 1, confidence=0.999, text="1-5"),
+            ],
+        )
+
+        resolve_page_model_conflicts(model)
+
+        self.assertEqual({block.block_id for block in model.blocks}, {"question", "fraction"})
+
+    def test_small_callout_crop_cannot_delete_large_editable_body_paragraph(self) -> None:
+        model = PageModel(
+            schema_version=7,
+            page_index=8,
+            size=PageSize(595, 842),
+            source_type=PdfKind.OUTLINED,
+            blocks=[
+                PageBlock(
+                    "body",
+                    "editable_callout_body",
+                    (100, 100, 900, 300),
+                    0,
+                    0,
+                    confidence=0.99,
+                    text="这是跨越多行的大段解析正文，左上角的标签截图不能删除整段内容。",
+                ),
+                PageBlock(
+                    "tag",
+                    "talk_callout_tag_image",
+                    (100, 100, 240, 145),
+                    1,
+                    1,
+                    asset_path="tag.png",
+                    fallback_mode="callout_prefix_source_image",
+                ),
+            ],
+        )
+
+        resolve_page_model_conflicts(model)
+
+        self.assertEqual({block.block_id for block in model.blocks}, {"body", "tag"})
+        self.assertFalse(any(item["type"] == "image_text_conflict" for item in editable_quality_report([model])["pages"][0]["static_findings"]))

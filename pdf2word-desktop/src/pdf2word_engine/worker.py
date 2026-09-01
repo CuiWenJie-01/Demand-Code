@@ -7,16 +7,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .ocr import paddleocr_capability
 from .execution import resolve_ocr_execution_profile
-from .pipeline import convert_pdf
+from .ocr import paddleocr_capability
+from .pipeline import create_source_first_pilot
 from .preflight import inspect_pdf
-from .representative import (
-    cer_review_catalog,
-    load_representative_manifest,
-    prepare_cer_review_page,
-    save_cer_review_page,
-)
 
 
 def _send(payload: dict[str, Any]) -> None:
@@ -36,60 +30,26 @@ def _handle(request: dict[str, Any]) -> None:
         report = inspect_pdf(Path(request["source"]))
         _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": report.to_dict(include_page_sizes=False)})
         return
-    if command == "convert":
-        result = convert_pdf(
+    if command == "source_first_pilot":
+        docx, quality_report, manifest = create_source_first_pilot(
             Path(request["source"]),
             output_dir=Path(request["output_dir"]),
-            workspace_root=Path(request["workspace_root"]),
-            dpi=int(request.get("dpi", 200)),
-            page_range=request.get("page_range"),
-            resume_job_id=request.get("resume_job_id"),
+            workspace_dir=Path(request["workspace_dir"]),
+            dpi=int(request.get("dpi", 300)),
             ocr_device=str(request.get("ocr_device", "auto")),
             cpu_threads=int(request["cpu_threads"]) if request.get("cpu_threads") is not None else None,
             progress=lambda payload: _event(request_id, payload),
         )
-        _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result.to_dict()})
-        return
-    if command == "cer_review_catalog":
-        manifest_path = Path(request["manifest"])
-        manifest = load_representative_manifest(manifest_path)
         _send(
             {
                 "protocol_version": 1,
                 "request_id": request_id,
                 "ok": True,
-                "result": cer_review_catalog(manifest, manifest_path),
-            }
-        )
-        return
-    if command == "cer_review_prepare":
-        manifest = load_representative_manifest(Path(request["manifest"]))
-        result = prepare_cer_review_page(
-            manifest,
-            page_number=int(request["page_number"]),
-            source_pdf=Path(request["source_pdf"]),
-            independent_ocr_path=Path(request["independent_ocr"]) if request.get("independent_ocr") else None,
-            dpi=int(request.get("dpi", 144)),
-            low_confidence_threshold=float(request.get("low_confidence_threshold", 0.90)),
-        )
-        _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result})
-        return
-    if command == "cer_review_save":
-        manifest = load_representative_manifest(Path(request["manifest"]))
-        raw_segments = request.get("segments")
-        if raw_segments is not None and not isinstance(raw_segments, list):
-            raise ValueError("segments 必须是数组。")
-        output = save_cer_review_page(
-            manifest,
-            page_number=int(request["page_number"]),
-            segments=raw_segments,
-        )
-        _send(
-            {
-                "protocol_version": 1,
-                "request_id": request_id,
-                "ok": True,
-                "result": {"annotation_path": str(output)},
+                "result": {
+                    "docx": str(docx),
+                    "quality_report": str(quality_report),
+                    "manifest": str(manifest),
+                },
             }
         )
         return

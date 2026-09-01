@@ -31,7 +31,7 @@ class ExecutionProfileTests(unittest.TestCase):
         self.assertTrue(profile.enable_hpi)
         self.assertEqual(profile.gpu, gpu)
 
-    def test_auto_declines_busy_gpu(self) -> None:
+    def test_auto_keeps_busy_gpu_with_conservative_execution(self) -> None:
         gpu = NvidiaGpu(0, "NVIDIA GPU", 6144, 1024)
         profile = resolve_ocr_execution_profile(
             "auto",
@@ -40,8 +40,21 @@ class ExecutionProfileTests(unittest.TestCase):
             nvidia_gpu_query=lambda: [gpu],
         )
 
-        self.assertEqual(profile.device, "cpu")
-        self.assertIn("可用显存", profile.reason)
+        self.assertEqual(profile.device, "gpu:0")
+        self.assertIn("串行/低批次", profile.reason)
+
+    def test_production_gpu_preference_overrides_explicit_cpu_when_gpu_is_usable(self) -> None:
+        gpu = NvidiaGpu(0, "NVIDIA GPU", 6144, 4096)
+        profile = resolve_ocr_execution_profile(
+            "cpu",
+            cpu_threads=4,
+            enforce_gpu_preference=True,
+            paddle_cuda_available=lambda: (True, "ready"),
+            nvidia_gpu_query=lambda: [gpu],
+        )
+
+        self.assertEqual(profile.device, "gpu:0")
+        self.assertIn("未采用显式 CPU 请求", profile.reason)
 
     def test_requested_gpu_falls_back_when_cpu_runtime_is_installed(self) -> None:
         profile = resolve_ocr_execution_profile(

@@ -130,7 +130,12 @@ def resolve_page_model_conflicts(model: PageModel) -> PageModel:
         if block in owners or not block.text:
             retained.append(block)
             continue
-        covering = [owner for owner in owners if overlap_ratio(block, owner) >= 0.18]
+        block_area = _area(block.bbox)
+        covering = [
+            owner
+            for owner in owners
+            if block_area > 0 and intersection_area(block.bbox, owner.bbox) / block_area >= 0.42
+        ]
         if covering:
             _record(model, action="removed", block=block, reason="covered by exclusive source-image fallback", related=[item.block_id for item in covering])
             continue
@@ -148,10 +153,24 @@ def resolve_page_model_conflicts(model: PageModel) -> PageModel:
                 continue
             spatial = overlap_ratio(left, right)
             similarity = _similar(left, right)
-            contains = _normal_text(left.text) in _normal_text(right.text) or _normal_text(right.text) in _normal_text(left.text)
+            left_text = _normal_text(left.text)
+            right_text = _normal_text(right.text)
+            shorter, longer = sorted((left_text, right_text), key=len)
+            # Tiny formula fragments such as ``1`` or ``1-5`` often sit
+            # entirely inside a merged paragraph bbox.  Geometric containment
+            # does not make them duplicate prose, and they must never erase a
+            # complete question stem.
+            contains = (
+                len(shorter) >= 8
+                and len(shorter) / max(1, len(longer)) >= 0.50
+                and shorter in longer
+            )
             if spatial < 0.55 or (similarity < 0.78 and not contains):
                 continue
-            winner, loser = (left, right) if _score(left) >= _score(right) else (right, left)
+            if contains and len(left_text) != len(right_text) and abs(_score(left) - _score(right)) < 0.12:
+                winner, loser = (left, right) if len(left_text) > len(right_text) else (right, left)
+            else:
+                winner, loser = (left, right) if _score(left) >= _score(right) else (right, left)
             winner.selection_reason = winner.selection_reason or "selected as higher-quality OCR candidate after spatial/text comparison"
             _record(model, action="removed", block=loser, reason=f"duplicate OCR (overlap={spatial:.2f}, similarity={similarity:.2f}); kept higher-quality candidate", related=[winner.block_id])
             discarded.add(loser.block_id)
@@ -163,6 +182,7 @@ def resolve_page_model_conflicts(model: PageModel) -> PageModel:
             block.selection_reason = block.selection_reason or "retained source-image fallback after conflict resolution"
         elif block.text:
             block.selection_reason = block.selection_reason or "retained editable OCR after conflict resolution"
+    model.warnings = [warning for warning in model.warnings if not warning.startswith("冲突消解器已处理 ")]
     if model.debug_records:
         model.warnings.append(f"冲突消解器已处理 {len(model.debug_records)} 个块决策。")
     return model
@@ -209,9 +229,19 @@ def static_page_checks(model: PageModel) -> list[dict[str, Any]]:
                 continue
             has_editable_text = (bool(left.text) and not left.asset_path) or (bool(right.text) and not right.asset_path)
             if has_editable_text and _is_exclusive_owner(left) != _is_exclusive_owner(right):
-                findings.append({"type": "image_text_conflict", "blocks": [left.block_id, right.block_id], "detail": f"overlap={ratio:.2f}"})
+                text_block = left if left.text and not left.asset_path else right
+                text_area = _area(text_block.bbox)
+                text_coverage = intersection_area(left.bbox, right.bbox) / text_area if text_area else 0.0
+                if text_coverage >= 0.42:
+                    findings.append({"type": "image_text_conflict", "blocks": [left.block_id, right.block_id], "detail": f"overlap={ratio:.2f}, text_coverage={text_coverage:.2f}"})
             elif left.text and right.text and _similar(left, right) >= 0.78:
                 findings.append({"type": "duplicate_text", "blocks": [left.block_id, right.block_id], "detail": f"overlap={ratio:.2f}"})
-            else:
+            elif left.text and right.text:
+                left_role = str(left.style.get("semantic_role", ""))
+                right_role = str(right.style.get("semantic_role", ""))
+                if "answer_blank" in {left_role, right_role}:
+                    continue
+                if max(int(left.style.get("line_count", 1)), int(right.style.get("line_count", 1))) > 1:
+                    continue
                 findings.append({"type": "high_overlap", "blocks": [left.block_id, right.block_id], "detail": f"overlap={ratio:.2f}"})
     return findings

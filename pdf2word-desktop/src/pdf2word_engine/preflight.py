@@ -71,7 +71,7 @@ def inspect_pdf(source: str | Path, *, sample_pages: int = 7) -> PreflightReport
 
     The check deliberately looks at resources across all pages because a small
     sample can misroute an outlined publication PDF to a text-layer pipeline.
-    Text extraction itself remains limited to representative pages.
+    Text extraction itself remains limited to a deterministic page sample.
     """
 
     source_path = Path(source).expanduser().resolve()

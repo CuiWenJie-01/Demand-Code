@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-# Version 6 adds explicit page classification and reconstruction mode.  Those
-# fields are intentionally page-level: a cover, a Word-native table of
-# contents, and an ordinary exam page must never be sent through the same
-# reconstruction policy merely because they share OCR-shaped blocks.
-PAGE_MODEL_SCHEMA_VERSION = 6
+# Version 7 separates immutable OCR/layout evidence from the blocks selected
+# for Word output.  ``blocks`` remains the canonical output list for backwards
+# compatibility; serialized models also expose it as ``output_blocks`` so a
+# quality report cannot confuse raw candidates with rendered content.
+PAGE_MODEL_SCHEMA_VERSION = 7
 
 
 class PdfKind(str, Enum):
@@ -106,15 +106,23 @@ class PageModel:
     source_image_width_px: int | None = None
     source_image_height_px: int | None = None
     blocks: list[PageBlock] = field(default_factory=list)
+    evidence_blocks: list[PageBlock] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     debug_records: list[dict[str, Any]] = field(default_factory=list)
     page_class: str = "ordinary"
     reconstruction_mode: str = "hybrid"
     source_fingerprint: str | None = None
 
+    @property
+    def output_blocks(self) -> list[PageBlock]:
+        """Blocks selected for the final Word document."""
+
+        return self.blocks
+
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["source_type"] = self.source_type.value
+        result["output_blocks"] = result["blocks"]
         return result
 
     @classmethod
@@ -124,33 +132,40 @@ class PageModel:
         size_value = value.get("size")
         if not isinstance(size_value, Mapping):
             raise ValueError("PageModel 缺少页面尺寸。")
-        blocks: list[PageBlock] = []
-        raw_blocks = value.get("blocks", [])
+        def parse_blocks(raw_value: object) -> list[PageBlock]:
+            parsed: list[PageBlock] = []
+            if not isinstance(raw_value, list):
+                return parsed
+            for raw_block in raw_value:
+                if not isinstance(raw_block, Mapping):
+                    continue
+                bbox_value = raw_block.get("bbox")
+                if not isinstance(bbox_value, (list, tuple)) or len(bbox_value) != 4:
+                    continue
+                parsed.append(
+                    PageBlock(
+                        block_id=str(raw_block.get("block_id", "unknown")),
+                        block_type=str(raw_block.get("block_type", "unknown")),
+                        bbox=tuple(float(item) for item in bbox_value),
+                        z_index=int(raw_block.get("z_index", 0)),
+                        reading_order=int(raw_block.get("reading_order", 0)),
+                        confidence=float(raw_block["confidence"]) if raw_block.get("confidence") is not None else None,
+                        text=str(raw_block["text"]) if raw_block.get("text") is not None else None,
+                        style=dict(raw_block.get("style", {})) if isinstance(raw_block.get("style"), Mapping) else {},
+                        asset_path=str(raw_block["asset_path"]) if raw_block.get("asset_path") else None,
+                        warnings=[str(item) for item in raw_block.get("warnings", [])] if isinstance(raw_block.get("warnings"), list) else [],
+                        source=str(raw_block["source"]) if raw_block.get("source") else None,
+                        selection_reason=str(raw_block["selection_reason"]) if raw_block.get("selection_reason") else None,
+                        fallback_mode=str(raw_block["fallback_mode"]) if raw_block.get("fallback_mode") else None,
+                    )
+                )
+            return parsed
+
+        raw_blocks = value.get("output_blocks", value.get("blocks", []))
         if not isinstance(raw_blocks, list):
             raise ValueError("PageModel 的 blocks 字段无效。")
-        for raw_block in raw_blocks:
-            if not isinstance(raw_block, Mapping):
-                continue
-            bbox_value = raw_block.get("bbox")
-            if not isinstance(bbox_value, (list, tuple)) or len(bbox_value) != 4:
-                continue
-            blocks.append(
-                PageBlock(
-                    block_id=str(raw_block.get("block_id", "unknown")),
-                    block_type=str(raw_block.get("block_type", "unknown")),
-                    bbox=tuple(float(item) for item in bbox_value),
-                    z_index=int(raw_block.get("z_index", 0)),
-                    reading_order=int(raw_block.get("reading_order", 0)),
-                    confidence=float(raw_block["confidence"]) if raw_block.get("confidence") is not None else None,
-                    text=str(raw_block["text"]) if raw_block.get("text") is not None else None,
-                    style=dict(raw_block.get("style", {})) if isinstance(raw_block.get("style"), Mapping) else {},
-                    asset_path=str(raw_block["asset_path"]) if raw_block.get("asset_path") else None,
-                    warnings=[str(item) for item in raw_block.get("warnings", [])] if isinstance(raw_block.get("warnings"), list) else [],
-                    source=str(raw_block["source"]) if raw_block.get("source") else None,
-                    selection_reason=str(raw_block["selection_reason"]) if raw_block.get("selection_reason") else None,
-                    fallback_mode=str(raw_block["fallback_mode"]) if raw_block.get("fallback_mode") else None,
-                )
-            )
+        blocks = parse_blocks(raw_blocks)
+        evidence_blocks = parse_blocks(value.get("evidence_blocks", []))
         return cls(
             schema_version=int(value.get("schema_version", 1)),
             page_index=int(value.get("page_index", 0)),
@@ -159,6 +174,7 @@ class PageModel:
             source_image_width_px=int(value["source_image_width_px"]) if value.get("source_image_width_px") else None,
             source_image_height_px=int(value["source_image_height_px"]) if value.get("source_image_height_px") else None,
             blocks=blocks,
+            evidence_blocks=evidence_blocks,
             warnings=[str(item) for item in value.get("warnings", [])] if isinstance(value.get("warnings"), list) else [],
             debug_records=[dict(item) for item in value.get("debug_records", []) if isinstance(item, Mapping)],
             page_class=str(value.get("page_class", "ordinary")),

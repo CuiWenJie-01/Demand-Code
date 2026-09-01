@@ -1,39 +1,126 @@
 # M1 质量门禁
 
-代表页清单固定为 12 页。`representative-regression --strict` 验证每页都具有 PageModel 与 DOCX 工件，并检查定位文本框、可编辑竖排栏/页码色条及 Office 兼容渲染后的单页分页。
+> 文档版本：3.0
+> 基线日期：2026-09-01
+> 上位方案：`PROJECT_PLAN.md`
+> 专项实施规范：`docs/SOURCE_FIRST_EDITABLE_HYBRID_REBUILD.md`
 
-`representative-quality-gate` 不读取已有 DOCX 作为候选输出：它从登记的 PageModel 重新生成 DOCX，使用指定渲染器输出 144 DPI PNG，再与清单中的人工批准视觉快照比较 SSIM 和 MAE。清单中记录每页阈值；第 200 页为 Word/LibreOffice 字体度量差异较大的已批准例外，其余页使用通用阈值。
+## 1. 旧 12 页基线的处置结论
 
-CER 是代表页基准的研发验收工具，不是每次转换的人工步骤。正常转换只执行预检、OCR、Word 生成和自动质量检查；只有建立或扩充页面类型基准时，才运行人工审校。
+历史固定 12 页集合（1、10、40、80、120、160、200、240、300、330、360、381）不再作为门禁。与它绑定的代表页 manifest、人工修补 PageModel、旧 DOCX/PNG 视觉金标、按 block ID 保存的 CER 标注、CLI 命令和桌面审校界面均已删除。
 
-使用 `cer-review` 生成的浏览器页面按页而非按块确认：左侧为源 PDF 原图，右侧为预填生产 OCR；双 OCR 不一致、低置信度和疑似断行会高亮。审校者修正文字后一次确认整页，下载的 UTF-8 JSON 才能作为 CER 标注。预填 OCR 只是编辑草稿，`page_confirmed: true` 是人工已通读确认的必要记录。
+删除原因：这些工件来自旧的逐行 VML 文本框与缓存优先路线。继续运行它们只能证明“旧 PageModel 能再次生成相似的旧 Word”，不能证明当前源 PDF 经过水印清理、新 OCR、冲突消解和段落重建后是准确的。
+
+仍然保留的能力是与具体旧页无关的通用检查：
+
+- DOCX ZIP/OOXML 可读取；
+- 可编辑文字数量；
+- 原生 Word 段落和局部图片数量；
+- 旧式 VML 正文文本框必须为零；
+- Word/LibreOffice 能打开并导出；
+- 渲染页数与源 PDF 物理页数一致；
+- PageModel 静态冲突、覆盖率和回退报告；
+- 源页与 Word 渲染图的区域级差异。
+
+## 2. 当前 6 页前置门禁
+
+物理页 7、8、9、10、21、23 是本书 source-first 改造的前置验收样本，不是可长期复用的旧 PageModel 基线。每次需要重新执行时，必须从当前源 PDF、当前代码和空任务目录走完整链路：
+
+```text
+源 PDF → 水印清理 → 新渲染 → 新 OCR → 自动规则
+→ PageModel → Word → 结构检查 → Word/LibreOffice 渲染 → 源页对照
+```
+
+这 6 页验证章节艺术标题、普通正文段落、选项、谈答案/解析/提示、复杂公式局部回退、标签去重和页码 `018`。自动结果只能与同一运行的源页证据对照，不读取历史 OCR、PageModel、DOCX 或人工修补工件。
+
+## 3. 381 页正式任务的动态抽样门禁
+
+全书不再维护一个永远固定的 12 页清单。每次正式运行根据当前任务报告生成只属于该运行的抽样 manifest，至少包含：
+
+1. 强制业务页：封面、目录、物理页 7、21、23 和末页；
+2. 每种页面类型、章节和重建模式的确定性分层样本；
+3. 所有整页回退页；
+4. 所有图片/文字冲突、低置信度、公式碎片、溢出或异常重叠页；
+5. 所有 CPU 回退页和自动修复升级页；
+6. 源页与 Word 渲染差异超过预警阈值的页面。
+
+抽样 manifest 必须记录源 PDF SHA-256、代码版本、PageModel schema、OCR 模型及权重哈希、参数、实际设备和当前任务 ID。它是质量报告的一部分，不是下次运行可读取的 OCR/PageModel 缓存。
+
+## 4. 设备门禁
+
+- 启动 OCR 前必须探测兼容计算设备；
+- 兼容 NVIDIA GPU 可正常初始化时，版面分析、全页 OCR 和局部补 OCR必须使用 GPU；
+- 显存不足时先降低批次、串行页面或缩小局部重试范围；
+- 只有无兼容 GPU、初始化失败或降载后仍失败才允许 CPU；
+- CPU 回退必须记录探测结果、失败原因、降载尝试和影响页码。
+
+## 5. PageModel 静态门禁
+
+每页写入 Word 前必须检查：
+
+- 重复文字和主 OCR/补 OCR 重复；
+- 文本块异常重叠、包含和阅读顺序；
+- 图片与文字区域冲突；
+- 公式碎片未被独占区域清理；
+- 页码异常；
+- 低置信度块；
+- 原生段落可能换行或溢出；
+- 回退块缺少来源、原因、等级或替代关系。
+
+冲突消解按词组/公式、单行、语义区域、单题、整页逐级升级。单个局部问题不得直接触发普通题目页整页截图。
+
+## 6. 可编辑性与 DOCX 结构门禁
+
+- 普通题目页可靠正文的可编辑字符覆盖率不低于 85%；
+- 章节首页排除 Logo、艺术标题、侧栏和复杂公式后，可编辑正文覆盖率不低于 80%；
+- 目录文字全部可编辑；
+- 公式重页的可靠普通文字必须可编辑；
+- 普通正文不得写入旧式 VML 逐行文本框；
+- Word 中的正文必须能实际选中、复制和修改；
+- 普通题目页整页截图必须列为异常。
+
+通用命令：
 
 ```powershell
-pdf2word-engine cer-review .\tests\fixtures\representative_pages.json `
-  --source-pdf D:\work\source.pdf --output-dir .\runtime\cer-review
+pdf2word-engine docx-check .\outputs\candidate.docx `
+  --minimum-editable-characters 100 `
+  --render-output-dir .\runtime\docx-check --expected-pages 381
 ```
 
-确认后的 CER 标注格式如下。`reference_text` 由人工确认，禁止把未确认的 OCR 草稿当作真值；每个片段仍保留独立 `block_id`，以便定位错误和计算 CER。
+## 7. OCR 准确率与人工真值
 
-```json
-{
-  "schema_version": 2,
-  "workflow": "page_review",
-  "page_number": 10,
-  "page_confirmed": true,
-  "segments": [
-    {"block_id": "line-1", "reference_text": "人工逐字转写内容"},
-    {"block_id": "line-2", "reference_text": "下一行人工转写内容"}
-  ]
-}
+字符错误率仍是有价值的算法指标，但旧 CER JSON 以旧 PageModel block ID 为锚点，已经失效，因此一并删除。以后如重建人工真值集，必须以“源 PDF 哈希 + 物理页码 + 稳定源区域坐标 + 人工转写”作为主键，生产 OCR 只能做预填草稿，不能作为真值，也不能与任务缓存混放。
+
+当前 381 页验收不因缺少新的人工真值集而伪报 CER 通过；质量状态应明确写为“CER 尚未建立”或给出实际已审校范围。
+
+## 8. 渲染和兼容性门禁
+
+LibreOffice 用于开发期快速回归；Microsoft Word 是最终分页和打开能力门禁；WPS 单独记录兼容性，不替代 Word。
+
+每次候选 DOCX 至少检查：
+
+- 页面数量、尺寸、顺序和分页；
+- 黑块、乱码、裁剪、重叠、溢出和异常空隙；
+- 图片与文字冲突为零；
+- 公式截图清晰度和安全边距；
+- 目录点引导线、书签和可编辑文字；
+- 可编辑字符覆盖率、区域截图率、单题截图率和整页截图率；
+- 当前源页与当前 Word 渲染的区域级差异。
+
+Microsoft Word 实机命令：
+
+```powershell
+pdf2word-engine word-render-check .\outputs\candidate.docx `
+  --output-pdf .\runtime\word-check\candidate.pdf --expected-pages 381
 ```
 
-若页面完全由图片回退构成、没有可编辑 OCR 文本，可登记 `exclude_from_cer: true` 与明确的 `exclusion_reason`；该页从 CER 分母排除，不能伪造 0% CER。
+## 9. 状态与报告门禁
 
-执行 `representative-quality-gate --require-cer` 时，任一页缺少标注、未整页确认或超出该页 `maximum_cer` 即失败。当前验收阈值为 0.5%，但只有在 12 页独立人工标注完整后，才可宣称 CER 已通过。
+质量报告必须区分：
 
-长期基准库按页面类型积累：普通题目、图表资料分析、表格公式、几何图、竖排栏/水印、封面目录末页和低清异常页。相近的新书仅自动转换和抽检；出版社/版式变化时补充约 5–12 个代表页；自动门禁标红时仅审校异常页。
+- `conversion_completed`：指定页面已生成，不代表质量通过；
+- `static_quality_passed`：PageModel 静态门禁通过；
+- `current_run_e2e_passed`：本次动态抽样完整链路通过；
+- `full_book_quality_passed`：381 页静态检查、动态抽样、全书渲染和报告均通过。
 
-最终 Microsoft Word 门禁使用 `word-render-regression`。它经 Word COM 以只读方式打开 DOCX、导出 PDF、验证页数，并始终关闭 Word 与文档；运行机器必须预先安装 Microsoft Word 和项目 `word-render` 可选依赖。该门禁不能由 LibreOffice 结果替代。
-
-WPS 是单独的兼容性目标，不能替代 Microsoft Word。本机 WPS 未注册可调用的 COM 自动化接口，因此现阶段按实际 GUI 流程打开 DOCX、导出 PDF、验证页数并逐页目视复核；通过后应保存独立的 WPS PDF/截图和验收记录，不能混用 Word 或 LibreOffice 的像素阈值。
+正式任务报告至少包含冲突页、低置信度页、所有回退清单、可编辑覆盖率、自动修复、实际设备、CPU 回退、动态抽样页、人工抽检页及源页/Word 渲染差异。

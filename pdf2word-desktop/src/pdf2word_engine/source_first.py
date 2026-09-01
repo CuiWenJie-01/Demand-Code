@@ -9,18 +9,21 @@ not read a previous OCR job or PageModel cache.
 from __future__ import annotations
 
 from collections import Counter, deque
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 import re
+from statistics import fmean, median
 from typing import Iterable
 
 from PIL import Image, ImageFilter
 
-from .conflicts import force_full_page_fallback, intersection_area, resolve_page_model_conflicts
+from .conflicts import force_full_page_fallback, intersection_area, resolve_page_model_conflicts, static_page_checks
 from .models import PAGE_MODEL_SCHEMA_VERSION, PageBlock, PageModel, PageSize, PdfKind
 
 
-PILOT_PAGE_INDICES = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 20, 22)
+# Second-round editability gate: physical pages 7, 8, 9, 10, 21 and 23.
+PILOT_PAGE_INDICES = (6, 7, 8, 9, 20, 22)
 
 
 def write_pdf_without_tagged_watermarks(
@@ -536,7 +539,8 @@ def toc_page_model(
         return resolve_page_model_conflicts(model)
 
 
-_FORMULA_LINE = re.compile(r"(?:[A-Za-zχxy]\s*)?\d*[^\n]{0,40}[=×÷][^\n]*")
+_COMPLEX_FORMULA_LINE = re.compile(r"[√∑∫]|\^|[⁰¹²³⁴⁵⁶⁷⁸⁹]|\\(?:frac|sqrt|sum|int)")
+_FORMULA_FRAGMENT = re.compile(r"^[\dA-Za-zχxy+\-−—]+$")
 
 
 def _crop_block(image: Image.Image, block: PageBlock, destination: Path, *, margin: int = 4) -> None:
@@ -553,14 +557,116 @@ def _crop_block(image: Image.Image, block: PageBlock, destination: Path, *, marg
     block.source = block.source or "watermark-cleaned source PDF crop"
 
 
+def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, destination: Path) -> None:
+    """Replace narrow numerator/denominator OCR fragments by tiny source crops."""
+
+    lines = [block for block in model.blocks if block.block_type == "text_line" and block.text]
+    if not lines:
+        return
+    heights = [max(1.0, block.bbox[3] - block.bbox[1]) for block in lines]
+    typical_height = median(heights)
+    candidates: list[PageBlock] = []
+    tall_ids: set[str] = set()
+    for block in lines:
+        text = re.sub(r"\s+", "", block.text or "")
+        width = max(1.0, block.bbox[2] - block.bbox[0])
+        height = max(1.0, block.bbox[3] - block.bbox[1])
+        role = str(block.style.get("semantic_role", ""))
+        if role in {"callout_label", "callout_index", "answer_blank", "sidebar_page_number"}:
+            continue
+        numeric_fragment = bool(_FORMULA_FRAGMENT.fullmatch(text)) and len(text) <= 6 and width <= image.width * 0.065
+        tall_fragment = height >= typical_height * 1.45 and width <= image.width * 0.12 and len(text) <= 8
+        if numeric_fragment or tall_fragment:
+            candidates.append(block)
+            if tall_fragment:
+                tall_ids.add(block.block_id)
+    if not candidates:
+        return
+
+    adjacency: dict[str, set[str]] = {block.block_id: set() for block in candidates}
+    by_id = {block.block_id: block for block in candidates}
+    for index, left in enumerate(candidates):
+        left_center_x = (left.bbox[0] + left.bbox[2]) / 2
+        left_center_y = (left.bbox[1] + left.bbox[3]) / 2
+        for right in candidates[index + 1 :]:
+            right_center_x = (right.bbox[0] + right.bbox[2]) / 2
+            right_center_y = (right.bbox[1] + right.bbox[3]) / 2
+            if (
+                abs(left_center_x - right_center_x) <= max(24.0, max(left.bbox[2] - left.bbox[0], right.bbox[2] - right.bbox[0]) * 0.75)
+                and abs(left_center_y - right_center_y) <= typical_height * 1.9
+            ):
+                adjacency[left.block_id].add(right.block_id)
+                adjacency[right.block_id].add(left.block_id)
+
+    remaining = set(by_id)
+    components: list[list[PageBlock]] = []
+    while remaining:
+        seed = remaining.pop()
+        ids = {seed}
+        frontier = [seed]
+        while frontier:
+            current = frontier.pop()
+            for neighbour in adjacency[current]:
+                if neighbour in remaining:
+                    remaining.remove(neighbour)
+                    ids.add(neighbour)
+                    frontier.append(neighbour)
+        component = [by_id[block_id] for block_id in ids]
+        if len(component) >= 2 or any(block.block_id in tall_ids for block in component):
+            components.append(component)
+
+    bands: list[list[PageBlock]] = []
+    for component in sorted(components, key=lambda items: _union_bbox(items)[1]):
+        component_box = _union_bbox(component)
+        if bands and component_box[1] <= _union_bbox(bands[-1])[3] + typical_height * 0.35:
+            bands[-1].extend(component)
+        else:
+            bands.append(list(component))
+
+    removed: set[str] = set()
+    replacements: list[PageBlock] = []
+    for index, component in enumerate(bands, start=1):
+        component_box = _union_bbox(component)
+        row_lines = [
+            line
+            for line in lines
+            if component_box[1] - typical_height * 0.15
+            <= (line.bbox[1] + line.bbox[3]) / 2
+            <= component_box[3] + typical_height * 0.15
+        ]
+        owned = list({block.block_id: block for block in component + row_lines}.values())
+        replacement = PageBlock(
+            block_id=f"source-first-stacked-formula-{index}",
+            block_type="formula",
+            bbox=_union_bbox(owned),
+            z_index=min(block.z_index for block in owned),
+            reading_order=min(block.reading_order for block in owned),
+            source="watermark-cleaned source PDF formula-bearing row",
+            selection_reason="stacked fraction fragments require a source row crop to prevent OCR symbol overlap",
+            fallback_mode="formula_row_source_image",
+        )
+        _crop_block(image, replacement, destination, margin=6)
+        replacements.append(replacement)
+        removed.update(block.block_id for block in owned)
+    if removed:
+        model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
+
+
 def _replace_formula_lines(model: PageModel, image: Image.Image, destination: Path) -> None:
+    """Fallback only formulas that plain editable text cannot represent.
+
+    Ordinary percentages, ratios and one-line equations remain editable.  The
+    OCR adapter already emits dedicated ``formula`` blocks for stacked
+    fractions; this pass is intentionally narrow so a Chinese explanation
+    containing ``=`` or ``×`` is never converted into a full-line image.
+    """
+
     candidates = [
         block
         for block in model.blocks
         if block.block_type == "text_line"
         and block.text
-        and _FORMULA_LINE.search(block.text.replace(" ", ""))
-        and sum(block.text.count(token) for token in ("=", "×", "÷", "/")) >= 1
+        and _COMPLEX_FORMULA_LINE.search(block.text.replace(" ", ""))
     ]
     removed: set[str] = set()
     replacements: list[PageBlock] = []
@@ -616,14 +722,24 @@ def _replace_sidebars(model: PageModel, image: Image.Image, destination: Path) -
     sidebars = [block for block in model.blocks if block.block_type.lower() == "aside_text"]
     for index, sidebar in enumerate(sidebars, start=1):
         left_side = (sidebar.bbox[0] + sidebar.bbox[2]) / 2 < image.width / 2
+        page_numbers = [
+            block
+            for block in model.blocks
+            if block.text
+            and re.fullmatch(r"\s*\d{3}\s*", block.text)
+            and block.bbox[1] >= image.height * 0.82
+            and (((block.bbox[0] + block.bbox[2]) / 2 < image.width / 2) == left_side)
+        ]
         if left_side:
             left = max(0, round(sidebar.bbox[0] - 35))
-            right = min(image.width, round(max(sidebar.bbox[2] + 35, image.width * 0.16)))
+            right = min(image.width, round(sidebar.bbox[2] + 25))
         else:
-            left = max(0, round(min(sidebar.bbox[0] - 35, image.width * 0.84)))
+            left = max(0, round(sidebar.bbox[0] - 35))
             right = min(image.width, round(sidebar.bbox[2] + 35))
         top = max(0, round(sidebar.bbox[1] - 18))
-        bottom = image.height
+        bottom = min(image.height, round(sidebar.bbox[3] + 25))
+        if page_numbers:
+            bottom = min(bottom, round(min(block.bbox[1] for block in page_numbers) - 8))
         replacement = PageBlock(
             block_id=f"source-first-sidebar-{index}",
             block_type="image",
@@ -635,62 +751,432 @@ def _replace_sidebars(model: PageModel, image: Image.Image, destination: Path) -
             fallback_mode="sidebar_source_image",
         )
         _crop_block(image, replacement, destination, margin=0)
+        number_replacements: list[PageBlock] = []
+        for number_index, number in enumerate(page_numbers, start=1):
+            number_replacement = PageBlock(
+                block_id=f"source-first-sidebar-page-number-{index}-{number_index}",
+                block_type="image",
+                bbox=number.bbox,
+                z_index=number.z_index,
+                reading_order=number.reading_order,
+                source="watermark-cleaned source PDF page number",
+                selection_reason="page number retained as a separate source crop so the narrow sidebar cannot clip it",
+                fallback_mode="sidebar_page_number_source_image",
+            )
+            _crop_block(image, number_replacement, destination, margin=8)
+            number_replacements.append(number_replacement)
         retained: list[PageBlock] = []
         for block in model.blocks:
             center_x = (block.bbox[0] + block.bbox[2]) / 2
             center_y = (block.bbox[1] + block.bbox[3]) / 2
             if left <= center_x <= right and top <= center_y <= bottom:
                 continue
+            if any(_overlap_fraction(block, number) >= 0.42 for number in number_replacements):
+                continue
             retained.append(block)
-        model.blocks = retained + [replacement]
+        model.blocks = retained + [replacement] + number_replacements
 
 
 def _replace_talk_prefixes(model: PageModel, image: Image.Image, destination: Path) -> None:
-    markers = [
+    marker_candidates = [
         block
         for block in model.blocks
         if block.block_type.lower() in {"talk_badge_image", "talk_callout_tag_image"}
         or (block.asset_path and (block.text or "").strip() == "谈")
     ]
+    marker_candidates.extend(
+        block
+        for block in model.blocks
+        if not block.asset_path and (block.text or "").strip() == "谈"
+    )
+    label_candidates = [
+        block
+        for block in model.blocks
+        if not block.asset_path
+        and any((block.text or "").strip().startswith(value) for value in ("指数", "解析", "答案", "提示"))
+    ]
+
+    # OCR commonly emits two slightly displaced copies of the same callout
+    # label.  Build rows from the semantic label first; the talk badge is only
+    # supporting geometry.  This prevents an answer row and the following hint
+    # row from both claiming the same badge/label pixels.
+    label_groups: list[list[PageBlock]] = []
+    for label in sorted(label_candidates, key=lambda item: (item.bbox[1], item.bbox[0])):
+        center_y = (label.bbox[1] + label.bbox[3]) / 2
+        group = next(
+            (
+                items
+                for items in label_groups
+                if abs(center_y - sum((item.bbox[1] + item.bbox[3]) / 2 for item in items) / len(items)) <= 50
+            ),
+            None,
+        )
+        if group is None:
+            label_groups.append([label])
+        else:
+            group.append(label)
+
+    rows: list[tuple[list[PageBlock], list[PageBlock]]] = []
+    claimed_markers: set[str] = set()
+    for labels in label_groups:
+        center_y = sum((item.bbox[1] + item.bbox[3]) / 2 for item in labels) / len(labels)
+        markers = [
+            marker
+            for marker in marker_candidates
+            if abs(((marker.bbox[1] + marker.bbox[3]) / 2) - center_y) <= 58
+            and marker.bbox[0] <= min(label.bbox[0] for label in labels) + 20
+        ]
+        claimed_markers.update(marker.block_id for marker in markers)
+        rows.append((labels, markers))
+
+    orphan_marker_groups: list[list[PageBlock]] = []
+    for marker in sorted(
+        (item for item in marker_candidates if item.block_id not in claimed_markers),
+        key=lambda item: (item.bbox[1], item.bbox[0]),
+    ):
+        center_y = (marker.bbox[1] + marker.bbox[3]) / 2
+        group = next(
+            (
+                items
+                for items in orphan_marker_groups
+                if abs(center_y - sum((item.bbox[1] + item.bbox[3]) / 2 for item in items) / len(items)) <= 48
+            ),
+            None,
+        )
+        if group is None:
+            orphan_marker_groups.append([marker])
+        else:
+            group.append(marker)
+    rows.extend(([], markers) for markers in orphan_marker_groups)
+
     removed: set[str] = set()
     replacements: list[PageBlock] = []
-    for index, marker in enumerate(markers, start=1):
-        center_y = (marker.bbox[1] + marker.bbox[3]) / 2
-        nearby = [
+    for index, (labels, markers) in enumerate(
+        sorted(
+            rows,
+            key=lambda row: min(item.bbox[1] for item in row[0] + row[1]),
+        ),
+        start=1,
+    ):
+        anchors = labels or markers
+        center_y = sum((item.bbox[1] + item.bbox[3]) / 2 for item in anchors) / len(anchors)
+        same_row = [
             block
             for block in model.blocks
-            if block.text
-            and abs(((block.bbox[1] + block.bbox[3]) / 2) - center_y) <= max(35.0, marker.bbox[3] - marker.bbox[1])
-            and block.bbox[0] >= marker.bbox[0] - 10
-            and block.bbox[0] < image.width * 0.72
+            if (block.text or block.asset_path)
+            and abs(((block.bbox[1] + block.bbox[3]) / 2) - center_y) <= 48
+            and block.bbox[0] < image.width * 0.97
         ]
-        is_index = any("指数" in (block.text or "") or block.style.get("semantic_role") == "callout_index" for block in nearby)
-        if is_index:
-            selected = [block for block in nearby if "指数" in (block.text or "") or block.style.get("semantic_role") == "callout_index"]
-            right = max([marker.bbox[2] + 180] + [block.bbox[2] for block in selected]) + 8
-        else:
-            labels = [block for block in nearby if (block.text or "").strip() in {"谈", "指数", "解析", "答案", "提示"}]
-            right = max([marker.bbox[2] + 155] + [block.bbox[2] for block in labels]) + 8
-            selected = labels
-        top = min([marker.bbox[1]] + [block.bbox[1] for block in selected]) - 6
-        bottom = max([marker.bbox[3]] + [block.bbox[3] for block in selected]) + 6
+        left = min(
+            [item.bbox[0] for item in markers]
+            + [max(0.0, item.bbox[0] - 105.0) for item in labels]
+        )
+        same_row = [block for block in same_row if block.bbox[2] >= left - 10]
+        selected = list({block.block_id: block for block in labels + markers + same_row}.values())
+        right = max(item.bbox[2] for item in selected) + 8
+        top = min(item.bbox[1] for item in selected) - 8
+        bottom = max(item.bbox[3] for item in selected) + 8
         replacement = PageBlock(
-            block_id=f"source-first-talk-prefix-{index}",
+            block_id=f"source-first-talk-row-{index}",
             block_type="talk_callout_tag_image",
-            bbox=(marker.bbox[0] - 6, top, min(float(image.width), right), bottom),
-            z_index=marker.z_index,
-            reading_order=marker.reading_order,
-            source="watermark-cleaned source PDF callout prefix",
-            selection_reason="decorative talk badge/label/rating retained as one reliable source crop",
-            fallback_mode="callout_prefix_source_image",
+            bbox=(max(0.0, left - 6), top, min(float(image.width), right), bottom),
+            z_index=min(item.z_index for item in selected),
+            reading_order=min(item.reading_order for item in selected),
+            source="watermark-cleaned source PDF callout row",
+            selection_reason="callout badge, label and first line retained as one reliable source crop",
+            fallback_mode="callout_first_row_source_image",
         )
         _crop_block(image, replacement, destination, margin=0)
         replacements.append(replacement)
         for block in model.blocks:
-            if _overlap_fraction(block, replacement) >= 0.45:
+            if _overlap_fraction(block, replacement) >= 0.42:
                 removed.add(block.block_id)
     if replacements:
         model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
+
+
+_QUESTION_START = re.compile(r"^\s*\d{1,3}\s*[.．、]")
+_OPTION_START = re.compile(r"^\s*[A-HＡ-Ｈ]\s*[.．、:]", re.IGNORECASE)
+_EDITABLE_LINE_TYPES = {"text_line", "paragraph_title", "header", "number"}
+
+
+def _replace_chapter_header(model: PageModel, image: Image.Image, destination: Path) -> None:
+    """Keep chapter artwork as one crop while leaving same-page questions editable."""
+
+    question_lines = [
+        block
+        for block in model.blocks
+        if block.text and _QUESTION_START.match(block.text) and block.bbox[1] < image.height * 0.42
+    ]
+    if not question_lines:
+        return
+    first_question_top = min(block.bbox[1] for block in question_lines)
+    bottom = max(1.0, first_question_top - max(12.0, image.height * 0.006))
+    decoration = PageBlock(
+        block_id="source-first-chapter-decoration",
+        block_type="decoration_image",
+        bbox=(0.0, 0.0, float(image.width), bottom),
+        z_index=0,
+        reading_order=-20,
+        source="watermark-cleaned source PDF chapter header",
+        selection_reason="chapter logo and artistic title retained without converting same-page body to an image",
+        fallback_mode="chapter_header_source_image",
+        style={"bookmark_name": f"source_page_{model.page_index + 1:04d}"},
+    )
+    _crop_block(image, decoration, destination, margin=0)
+    model.blocks = [
+        block
+        for block in model.blocks
+        if _overlap_fraction(block, decoration) < 0.35
+    ] + [decoration]
+
+
+def _line_role(block: PageBlock) -> str:
+    role = str(block.style.get("semantic_role", ""))
+    if role.startswith("callout") or role in {"solution_short_body"}:
+        return "callout"
+    if role == "answer_blank":
+        return "answer_blank"
+    text = (block.text or "").strip()
+    if _OPTION_START.match(text):
+        return "option"
+    if block.block_type in {"header", "paragraph_title"}:
+        return "heading"
+    if block.block_type == "number" or role == "sidebar_page_number":
+        return "number"
+    return "body"
+
+
+def _union_bbox(blocks: list[PageBlock]) -> tuple[float, float, float, float]:
+    return (
+        min(block.bbox[0] for block in blocks),
+        min(block.bbox[1] for block in blocks),
+        max(block.bbox[2] for block in blocks),
+        max(block.bbox[3] for block in blocks),
+    )
+
+
+def _option_rows(lines: list[PageBlock], page_width: float) -> tuple[list[PageBlock], set[str]]:
+    """Collapse same-baseline A/B/C/D fragments into one tabbed Word row."""
+
+    rows: list[list[PageBlock]] = []
+    for line in sorted(lines, key=lambda item: (item.bbox[1], item.bbox[0])):
+        center = (line.bbox[1] + line.bbox[3]) / 2
+        height = max(1.0, line.bbox[3] - line.bbox[1])
+        match = next(
+            (
+                row
+                for row in rows
+                if abs(center - median((item.bbox[1] + item.bbox[3]) / 2 for item in row))
+                <= max(height, median(item.bbox[3] - item.bbox[1] for item in row)) * 0.55
+            ),
+            None,
+        )
+        if match is None:
+            rows.append([line])
+        else:
+            match.append(line)
+
+    replacements: list[PageBlock] = []
+    removed: set[str] = set()
+    for index, row in enumerate(rows, start=1):
+        ordered = sorted(row, key=lambda item: item.bbox[0])
+        option_like = sum(bool(_OPTION_START.match((item.text or "").strip())) for item in ordered)
+        spread = ordered[-1].bbox[2] - ordered[0].bbox[0]
+        if len(ordered) < 2 or option_like < 2 or spread < page_width * 0.28:
+            continue
+        left = ordered[0].bbox[0]
+        style = dict(ordered[0].style)
+        style.update(
+            {
+                "semantic_role": "option_row",
+                "source_line_ids": [item.block_id for item in ordered],
+                "tab_stops_px": [round(item.bbox[0] - left, 2) for item in ordered[1:]],
+                "text_alignment": "left",
+            }
+        )
+        replacements.append(
+            PageBlock(
+                block_id=f"editable-option-row-{index}",
+                block_type="editable_option_row",
+                bbox=_union_bbox(ordered),
+                z_index=min(item.z_index for item in ordered),
+                reading_order=min(item.reading_order for item in ordered),
+                confidence=fmean(item.confidence for item in ordered if item.confidence is not None) if any(item.confidence is not None for item in ordered) else None,
+                text="\t".join((item.text or "").strip() for item in ordered),
+                style=style,
+                source="fresh OCR option row",
+                selection_reason="same-baseline options merged into one native Word paragraph with tab stops",
+            )
+        )
+        removed.update(item.block_id for item in ordered)
+    return replacements, removed
+
+
+def _merge_editable_paragraphs(model: PageModel, image: Image.Image) -> None:
+    """Merge OCR lines into editable semantic paragraphs before Word output."""
+
+    lines = [
+        block
+        for block in model.blocks
+        if block.text and not block.asset_path and block.block_type.lower() in _EDITABLE_LINE_TYPES
+    ]
+    if not lines:
+        return
+    option_rows, option_line_ids = _option_rows(lines, float(image.width))
+    ordinary = [block for block in lines if block.block_id not in option_line_ids]
+    heights = [max(1.0, block.bbox[3] - block.bbox[1]) for block in ordinary]
+    median_height = median(heights) if heights else 40.0
+    groups: list[list[PageBlock]] = []
+    for block in sorted(ordinary, key=lambda item: (item.bbox[1], item.bbox[0], item.reading_order)):
+        role = _line_role(block)
+        if not groups:
+            groups.append([block])
+            continue
+        previous_group = groups[-1]
+        previous = previous_group[-1]
+        previous_role = _line_role(previous_group[0])
+        vertical_gap = block.bbox[1] - previous.bbox[3]
+        left_shift = abs(block.bbox[0] - previous.bbox[0])
+        starts_question = bool(_QUESTION_START.match((block.text or "").strip()))
+        must_split = (
+            role in {"heading", "number", "option"}
+            or previous_role in {"heading", "number", "option"}
+            or role != previous_role
+            or starts_question
+            or vertical_gap < -median_height * 0.25
+            or vertical_gap > median_height * 1.45
+            or left_shift > image.width * 0.18
+        )
+        if must_split:
+            groups.append([block])
+        else:
+            previous_group.append(block)
+
+    scale_y = model.size.height_pt / max(1, image.height)
+    replacements: list[PageBlock] = []
+    removed = {block.block_id for block in lines}
+    for index, group in enumerate(groups, start=1):
+        first = group[0]
+        role = _line_role(first)
+        block_type = {
+            "callout": "editable_callout_body",
+            "heading": "editable_heading",
+            "number": "editable_page_number",
+        }.get(role, "editable_paragraph")
+        centers = [(item.bbox[1] + item.bbox[3]) / 2 for item in group]
+        baseline_gaps = [right - left for left, right in zip(centers, centers[1:]) if right > left]
+        line_spacing_pt = (median(baseline_gaps) * scale_y) if baseline_gaps else max(11.0, median_height * scale_y * 1.18)
+        configured_sizes = [
+            float(item.style["font_size_pt"])
+            for item in group
+            if isinstance(item.style.get("font_size_pt"), (int, float))
+        ]
+        style = dict(first.style)
+        style.update(
+            {
+                "semantic_role": role,
+                "source_line_ids": [item.block_id for item in group],
+                "line_count": len(group),
+                "line_spacing_pt": round(max(10.5, min(18.5, line_spacing_pt)), 2),
+                "font_size_pt": round(median(configured_sizes) if configured_sizes else 9.6, 2),
+                "font_name_east_asia": "SimSun",
+                "font_name_ascii": "Times New Roman",
+                "text_alignment": "left",
+                "first_line_indent_px": round(first.bbox[0] - min(item.bbox[0] for item in group), 2),
+            }
+        )
+        replacements.append(
+            PageBlock(
+                block_id=f"editable-paragraph-{index}",
+                block_type=block_type,
+                bbox=_union_bbox(group),
+                z_index=min(item.z_index for item in group),
+                reading_order=min(item.reading_order for item in group),
+                confidence=fmean(item.confidence for item in group if item.confidence is not None) if any(item.confidence is not None for item in group) else None,
+                text="\n".join((item.text or "").strip() for item in group),
+                style=style,
+                source="fresh source-first OCR paragraph grouping",
+                selection_reason="OCR lines merged into one native Word semantic paragraph",
+            )
+        )
+    model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements + option_rows
+
+
+def apply_region_level_static_fallbacks(
+    model: PageModel,
+    image_path: str | Path,
+    destination: str | Path,
+) -> PageModel:
+    """Repair only failing editable regions; never escalate one finding to a page image."""
+
+    findings = static_page_checks(model)
+    by_id = {block.block_id: block for block in model.blocks}
+    editable_ids: set[str] = set()
+    adjacency: dict[str, set[str]] = {}
+    for finding in findings:
+        if finding.get("type") not in {"duplicate_text", "image_text_conflict", "low_confidence"}:
+            continue
+        finding_ids: list[str] = []
+        for block_id in finding.get("blocks", []):
+            block = by_id.get(str(block_id))
+            if block is not None and block.text and not block.asset_path:
+                editable_ids.add(block.block_id)
+                finding_ids.append(block.block_id)
+        for block_id in finding_ids:
+            adjacency.setdefault(block_id, set()).update(item for item in finding_ids if item != block_id)
+    if not editable_ids:
+        return model
+    components: list[list[PageBlock]] = []
+    remaining = set(editable_ids)
+    while remaining:
+        seed = remaining.pop()
+        component_ids = {seed}
+        frontier = [seed]
+        while frontier:
+            current = frontier.pop()
+            for neighbour in adjacency.get(current, set()):
+                if neighbour in remaining:
+                    remaining.remove(neighbour)
+                    component_ids.add(neighbour)
+                    frontier.append(neighbour)
+        components.append([by_id[block_id] for block_id in sorted(component_ids)])
+    target = Path(destination)
+    replacements: list[PageBlock] = []
+    with Image.open(image_path) as opened:
+        image = opened.convert("RGB")
+        for index, component in enumerate(sorted(components, key=lambda items: _union_bbox(items)[1]), start=1):
+            bbox = _union_bbox(component)
+            replacement = PageBlock(
+                block_id=f"region-gate-fallback-{index}",
+                block_type="region_fallback_image",
+                bbox=bbox,
+                z_index=min(block.z_index for block in component),
+                reading_order=min(block.reading_order for block in component),
+                source="watermark-cleaned source PDF region",
+                selection_reason="static gate rejected only this editable region",
+                fallback_mode="region_source_image_after_static_gate",
+            )
+            _crop_block(image, replacement, target, margin=5)
+            replacements.append(replacement)
+            for block in component:
+                model.debug_records.append(
+                    {
+                        "action": "replaced_with_region_fallback",
+                        "block_id": block.block_id,
+                        "block_type": block.block_type,
+                        "source": block.source,
+                        "reason": "region-level static gate finding",
+                        "related_block_ids": [replacement.block_id],
+                        "bbox": list(block.bbox),
+                        "text_preview": (block.text or "")[:80],
+                    }
+                )
+    model.blocks = [block for block in model.blocks if block.block_id not in editable_ids] + replacements
+    model.warnings.append(
+        f"静态门禁将 {len(editable_ids)} 个异常文字块合并回退为 {len(replacements)} 个局部源图，未将整页降级为图片。"
+    )
+    return resolve_page_model_conflicts(model)
 
 
 def apply_source_first_hybrid_policy(
@@ -699,6 +1185,7 @@ def apply_source_first_hybrid_policy(
     region_directory: str | Path,
     *,
     source_fingerprint: str,
+    page_class: str = "ordinary_question",
 ) -> PageModel:
     """Postprocess a fresh OCR model into an accuracy-first ordinary page."""
 
@@ -706,16 +1193,23 @@ def apply_source_first_hybrid_policy(
     with Image.open(clean_image_path) as opened:
         image = opened.convert("RGB")
         model.schema_version = PAGE_MODEL_SCHEMA_VERSION
-        model.page_class = "ordinary_question"
-        model.reconstruction_mode = "editable_text_with_clean_source_region_fallbacks"
+        model.page_class = page_class
+        model.reconstruction_mode = "native_word_paragraphs_with_clean_source_region_fallbacks"
         model.source_fingerprint = source_fingerprint
         model.source_image_width_px, model.source_image_height_px = image.size
+        model.evidence_blocks = deepcopy(model.blocks)
         # The source image is already cleaned, so a previously inferred
         # watermark layer must never be carried into Word.
         model.blocks = [block for block in model.blocks if block.block_type.lower() != "watermark"]
-        _replace_formula_lines(model, image, destination)
+        # Claim callout first rows before formula fallback.  Those rows often
+        # contain stacked fractions; formula-first processing would split the
+        # badge, label and equation into overlapping crops.
         _replace_talk_prefixes(model, image, destination)
+        _replace_stacked_formula_fragments(model, image, destination)
+        _replace_formula_lines(model, image, destination)
         _replace_sidebars(model, image, destination)
+        if page_class == "chapter_opener":
+            _replace_chapter_header(model, image, destination)
         for block in model.blocks:
             if block.text and not block.asset_path and block.block_type == "text_line":
                 scale_y = model.size.height_pt / max(1, image.height)
@@ -727,6 +1221,8 @@ def apply_source_first_hybrid_policy(
                 block.style["justify_to_bbox"] = bool(len("".join(block.text.split())) >= 22 and (block.bbox[2] - block.bbox[0]) >= image.width * 0.60)
                 block.source = block.source or "fresh source-first PaddleOCR"
                 block.selection_reason = block.selection_reason or "fresh OCR retained as editable ordinary text"
+        resolve_page_model_conflicts(model)
+        _merge_editable_paragraphs(model, image)
         model.warnings.append("此页从源 PDF 新渲染并重新 OCR；未读取旧任务缓存。")
         model.warnings.append("上岸人水印在 OCR 和回退裁图之前已从源渲染中清理。")
     return resolve_page_model_conflicts(model)

@@ -186,15 +186,18 @@ def resolve_ocr_execution_profile(
     requested_device: str | None = "auto",
     *,
     cpu_threads: int | None = None,
+    enforce_gpu_preference: bool = False,
     paddle_cuda_available: Callable[[], tuple[bool, str]] = _paddle_cuda_available,
     nvidia_gpu_query: Callable[[], list[NvidiaGpu]] = _query_nvidia_gpus,
     hpi_available: Callable[[], bool] = _hpi_available,
 ) -> OcrExecutionProfile:
-    """Pick CPU/GPU without making GPU availability a hard requirement.
+    """Pick an observable OCR device profile.
 
-    ``auto`` deliberately declines GPUs with less than 4 GiB total or 2 GiB
-    currently free VRAM.  A later inference OOM still falls back to CPU, so a
-    transient desktop application using VRAM cannot lose the user's job.
+    Production conversion passes ``enforce_gpu_preference=True``: an explicit
+    CPU request then remains only a fallback hint and cannot bypass a usable
+    NVIDIA GPU.  Low free VRAM selects conservative GPU execution rather than
+    silently abandoning acceleration; the caller may serialize pages or lower
+    batches before an audited CPU fallback.
     """
 
     request = (requested_device or "auto").strip().lower()
@@ -203,7 +206,7 @@ def resolve_ocr_execution_profile(
     threads = cpu_threads if cpu_threads is not None else _recommended_cpu_threads()
     if threads < 1:
         raise ValueError("cpu_threads 必须大于 0。")
-    if request == "cpu":
+    if request == "cpu" and not enforce_gpu_preference:
         return OcrExecutionProfile(request, "cpu", threads, False, "用户指定使用 CPU。")
 
     cuda_ready, cuda_reason = paddle_cuda_available()
@@ -213,19 +216,20 @@ def resolve_ocr_execution_profile(
         gpu is None
         or (
             (gpu.total_memory_mb is None or gpu.total_memory_mb >= _MINIMUM_GPU_TOTAL_MB)
-            and (gpu.free_memory_mb is None or gpu.free_memory_mb >= _MINIMUM_GPU_FREE_MB)
         )
     )
     if gpu_usable:
         hpi_enabled = hpi_available()
-        reason = "自动选择 NVIDIA GPU OCR。"
+        reason = "GPU 优先策略选择 NVIDIA GPU OCR。"
+        if request == "cpu":
+            reason += "检测到可用 GPU，未采用显式 CPU 请求。"
+        if gpu is not None and gpu.free_memory_mb is not None and gpu.free_memory_mb < _MINIMUM_GPU_FREE_MB:
+            reason += f"当前空闲显存 {gpu.free_memory_mb} MiB，将采用串行/低批次执行。"
         if not hpi_enabled:
             reason += "未安装 ultra-infer，使用 Paddle 原生 GPU 推理。"
         return OcrExecutionProfile(request, "gpu:0", None, hpi_enabled, reason, gpu)
 
-    if gpu is not None and gpu.free_memory_mb is not None and gpu.free_memory_mb < _MINIMUM_GPU_FREE_MB:
-        reason = f"GPU 可用显存仅 {gpu.free_memory_mb} MiB，低于安全阈值；改用 CPU。"
-    elif gpu is not None and gpu.total_memory_mb is not None and gpu.total_memory_mb < _MINIMUM_GPU_TOTAL_MB:
+    if gpu is not None and gpu.total_memory_mb is not None and gpu.total_memory_mb < _MINIMUM_GPU_TOTAL_MB:
         reason = f"GPU 总显存仅 {gpu.total_memory_mb} MiB，低于安全阈值；改用 CPU。"
     else:
         reason = f"{cuda_reason} 改用 CPU。"

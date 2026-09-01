@@ -90,5 +90,6 @@ class EducationQuestionLayoutProfile:
 
 
 # The first productized profile is deliberately named by layout family, not by
-# source document or page number. Page 10 is its first golden regression case.
+# source document or page number. It remains a reusable layout heuristic only;
+# no fixed historical page is treated as a golden PageModel.
 CN_EXAM_QUESTION_V1 = EducationQuestionLayoutProfile()

@@ -1655,7 +1655,9 @@ def materialize_visual_fallbacks(
         model.source_image_width_px = width
         model.source_image_height_px = height
         _restore_unreadable_sidebar_as_image(model, image, destination)
-        _restore_neutral_gray_watermark(model, image, destination)
+        # Do not recreate the large neutral-gray ``上岸人`` layer.  The source-
+        # first workflow removes it before OCR, and keeping a second generic
+        # detector here could reintroduce the very watermark the user rejected.
         _restore_callout_ratings_from_source(model, image)
         _collapse_formula_fragments_to_image_fallback(model, page_width_px=width)
         _recover_fragmented_text_tails(model, image, destination, focused_pipeline=focused_pipeline)

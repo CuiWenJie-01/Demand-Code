@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from math import ceil
 from pathlib import Path
 import re
 from xml.sax.saxutils import escape
@@ -13,7 +12,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import parse_xml
 from docx.oxml.ns import qn
-from docx.shared import Emu, Pt
+from docx.shared import Emu, Pt, RGBColor
 from pypdf import PdfReader
 
 from .errors import OcrRequiredError
@@ -47,70 +46,15 @@ def _page_coordinate_scale(model: PageModel) -> tuple[float, float]:
     return model.size.width_pt / width, model.size.height_pt / height
 
 
-def _shape_style(block: PageBlock, model: PageModel) -> tuple[str, float, str, str]:
+def _image_shape_style(block: PageBlock, model: PageModel) -> str:
+    """Return page-anchored VML geometry for a source-image fallback."""
+
     scale_x, scale_y = _page_coordinate_scale(model)
     left, top, right, bottom = block.bbox
     width = max(1.0, (right - left) * scale_x)
     height = max(1.0, (bottom - top) * scale_y)
-    try:
-        configured_width_padding_pt = float(block.style.get("textbox_width_padding_pt"))
-        if configured_width_padding_pt > 0:
-            width += configured_width_padding_pt
-    except (TypeError, ValueError):
-        pass
-    # OCR regions can contain several visual lines.  Deriving the font straight
-    # from total region height makes multi-line blocks enormous, so estimate the
-    # line count from the available width and content length first.
-    text_length = len("".join((block.text or "").split()))
-    estimated_char_width = 8.5
-    estimated_chars_per_line = max(1, int(width / estimated_char_width))
-    estimated_lines = max(1, ceil(text_length / estimated_chars_per_line))
-    font_pt = max(7.0, min(12.0, (height / estimated_lines) * 0.65))
-    block_type = block.block_type.lower()
-    semantic_role = str(block.style.get("semantic_role", ""))
-    # PP-Structure's line boxes are commonly only 8–11 pt high after page
-    # scaling.  LibreOffice (and some Word versions) clips CJK glyphs in a VML
-    # textbox this shallow.  A line is already the smallest editable unit, so
-    # keep it to one line with a compact, but legible, font and give its shape
-    # enough vertical room for the font metrics.
-    if block_type == "text_line":
-        font_pt = min(9.0, max(8.0, height * 0.72))
-        height = max(height, font_pt * 1.55)
-    color = "000000"
-    fill = "f"
-    if block_type == "paragraph_title":
-        color = "EF168B"
-        font_pt = max(font_pt, 8.0)
-    elif block_type == "header":
-        color = "000000"
-        font_pt = max(font_pt, 8.5)
-    elif block_type in {"aside_text", "number"}:
-        color = "555555"
-        font_pt = min(font_pt, 8.5)
-    try:
-        configured_font_pt = float(block.style.get("font_size_pt"))
-        if configured_font_pt > 0:
-            font_pt = configured_font_pt
-    except (TypeError, ValueError):
-        pass
-    # One-line OCR boxes are intentionally positioned as one-line boxes.  Do
-    # not let Word wrap a short answer into a neighbouring line.  Tighten a
-    # little first; a page conflict check can choose a source-image fallback
-    # for genuinely unfit content.
-    if block_type == "text_line" and text_length:
-        safe_font = width / max(1.0, text_length * 0.93)
-        font_pt = min(font_pt, max(6.5, safe_font))
-    try:
-        configured_min_height_pt = float(block.style.get("textbox_min_height_pt"))
-        if configured_min_height_pt > 0:
-            height = max(height, configured_min_height_pt)
-    except (TypeError, ValueError):
-        pass
-    configured_color = block.style.get("font_color")
-    if isinstance(configured_color, str) and len(configured_color) == 6:
-        color = configured_color.upper()
-    z_index = 0 if block_type == "watermark" or block.style.get("render_behind_text") else max(1, block.z_index + 1)
-    style = (
+    z_index = 0 if block.style.get("render_behind_text") else max(1, block.z_index + 1)
+    return (
         "position:absolute;"
         "mso-position-horizontal-relative:page;"
         "mso-position-vertical-relative:page;"
@@ -120,138 +64,6 @@ def _shape_style(block: PageBlock, model: PageModel) -> tuple[str, float, str, s
         f"height:{height:.2f}pt;"
         f"z-index:{z_index};"
     )
-    return style, font_pt, color, fill
-
-
-def _append_textbox(paragraph: object, model: PageModel, block: PageBlock) -> None:
-    text = (block.text or "").replace("\r", " ").replace("\n", " ").strip()
-    if not text:
-        return
-    style, font_pt, color, fill = _shape_style(block, model)
-    line_height = font_pt * 1.1 if block.block_type.lower() in {"paragraph_title", "header"} else 12.0
-    accent_length = block.style.get("accent_length")
-    try:
-        accent_length = max(0, min(len(text), int(accent_length))) if accent_length is not None else 0
-    except (TypeError, ValueError):
-        accent_length = 0
-    bold_prefix_length = block.style.get("bold_prefix_length")
-    try:
-        bold_prefix_length = max(0, min(len(text), int(bold_prefix_length))) if bold_prefix_length is not None else 0
-    except (TypeError, ValueError):
-        bold_prefix_length = 0
-    character_spacing_twips = block.style.get("character_spacing_twips")
-    try:
-        character_spacing_twips = int(character_spacing_twips) if character_spacing_twips is not None else 0
-    except (TypeError, ValueError):
-        character_spacing_twips = 0
-    runs = _textbox_runs(
-        text,
-        accent_length=accent_length,
-        bold_prefix_length=bold_prefix_length,
-        font_pt=font_pt,
-        color=color,
-        character_spacing_twips=character_spacing_twips,
-        east_asia_font=str(block.style.get("font_name_east_asia", "SimSun")),
-        ascii_font=str(block.style.get("font_name_ascii", "Times New Roman")),
-    )
-    requested_alignment = str(block.style.get("text_alignment", "")).lower()
-    if requested_alignment in {"left", "center", "right", "distribute"}:
-        alignment = f'<w:jc w:val="{requested_alignment}"/>'
-    else:
-        alignment = '<w:jc w:val="distribute"/>' if _should_distribute(block, model, text) else '<w:jc w:val="left"/>'
-    xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        xmlns:v="urn:schemas-microsoft-com:vml">
-      <v:shape id="pdf2word_text_{escape(block.block_id)}" type="#_x0000_t202" style="{style}" stroked="f" filled="{fill}">
-        <v:textbox inset="0pt,0pt,0pt,0pt" style="mso-fit-shape-to-text:f"><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{round(line_height * 20)}"/>{alignment}</w:pPr>
-          {runs}
-        </w:p></w:txbxContent></v:textbox>
-      </v:shape>
-    </w:pict>'''
-    paragraph.add_run()._r.append(parse_xml(xml))
-
-
-def _should_distribute(block: PageBlock, model: PageModel, text: str) -> bool:
-    """Permit spacing expansion only for near-full editable prose lines."""
-
-    if not block.style.get("justify_to_bbox") or len("".join(text.split())) < 18:
-        return False
-    role = str(block.style.get("semantic_role", ""))
-    if role in {"callout_label", "callout_answer", "answer_blank", "solution_short_body", "callout_body_fragment"}:
-        return False
-    page_width = model.source_image_width_px or model.size.width_pt
-    return (block.bbox[2] - block.bbox[0]) >= page_width * 0.62
-
-
-def _textbox_runs(
-    text: str,
-    *,
-    accent_length: int,
-    bold_prefix_length: int,
-    font_pt: float,
-    color: str,
-    character_spacing_twips: int = 0,
-    east_asia_font: str = "SimSun",
-    ascii_font: str = "Times New Roman",
-) -> str:
-    """Serialize editable runs with independently coloured and bold prefixes."""
-
-    def run(value: str, run_color: str, *, bold: bool) -> str:
-        # Be explicit for every non-title run: some Word/LibreOffice versions
-        # otherwise inherit the preceding run's bold state inside a VML box.
-        bold_xml = "<w:b/>" if bold else '<w:b w:val="0"/>'
-        character_spacing_xml = f'<w:spacing w:val="{character_spacing_twips}"/>' if character_spacing_twips else ""
-        return (
-            f'<w:r><w:rPr><w:rFonts w:ascii="{escape(ascii_font)}" w:hAnsi="{escape(ascii_font)}" w:eastAsia="{escape(east_asia_font)}"/>'
-            f'{bold_xml}{character_spacing_xml}<w:color w:val="{run_color}"/><w:sz w:val="{round(font_pt * 2)}"/></w:rPr>'
-            f'<w:t xml:space="preserve">{escape(value)}</w:t></w:r>'
-        )
-
-    boundaries = sorted({0, len(text), accent_length, bold_prefix_length})
-    return "".join(
-        run(
-            text[start:end],
-            "EF168B" if start < accent_length else color,
-            bold=start < bold_prefix_length,
-        )
-        for start, end in zip(boundaries, boundaries[1:])
-        if start < end
-    )
-
-
-def _append_toc_entry(paragraph: object, model: PageModel, block: PageBlock) -> None:
-    """Write one editable TOC-style paragraph with a real dot-leader tab."""
-
-    style, font_pt, color, fill = _shape_style(block, model)
-    scale_x, _ = _page_coordinate_scale(model)
-    width_pt = max(1.0, (block.bbox[2] - block.bbox[0]) * scale_x)
-    tab_position = max(120, round((width_pt - 3.0) * 20))
-    chapter = escape(str(block.style.get("toc_chapter", "")))
-    title = escape(str(block.style.get("toc_title", "")))
-    page_number = escape(str(block.style.get("toc_page", "")))
-    bookmark = str(block.style.get("target_bookmark", "")).strip()
-
-    def run(value: str, *, ascii_font: str = "STSong") -> str:
-        return (
-            '<w:r><w:rPr>'
-            f'<w:rFonts w:ascii="{escape(ascii_font)}" w:hAnsi="{escape(ascii_font)}" w:eastAsia="STSong"/>'
-            f'<w:color w:val="{color}"/><w:sz w:val="{round(font_pt * 2)}"/>'
-            '</w:rPr>'
-            f'<w:t xml:space="preserve">{value}</w:t></w:r>'
-        )
-
-    content = run(f"{chapter}　{title}") + run("<TAB>").replace('<w:t xml:space="preserve">&lt;TAB&gt;</w:t>', '<w:tab/>') + run(page_number, ascii_font="Arial")
-    if bookmark:
-        content = f'<w:hyperlink w:anchor="{escape(bookmark)}" w:history="1">{content}</w:hyperlink>'
-    xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        xmlns:v="urn:schemas-microsoft-com:vml">
-      <v:shape id="pdf2word_toc_{escape(block.block_id)}" type="#_x0000_t202" style="{style}" stroked="f" filled="{fill}">
-        <v:textbox inset="0pt,0pt,0pt,0pt" style="mso-fit-shape-to-text:f"><w:txbxContent><w:p><w:pPr>
-          <w:pStyle w:val="SourceTOC1"/><w:spacing w:before="0" w:after="0" w:line="260"/>
-          <w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{tab_position}"/></w:tabs><w:jc w:val="left"/>
-        </w:pPr>{content}</w:p></w:txbxContent></v:textbox>
-      </v:shape>
-    </w:pict>'''
-    paragraph.add_run()._r.append(parse_xml(xml))
 
 
 def _toc_native_run_xml(value: str, *, font_pt: float, color: str, ascii_font: str = "STSong") -> str:
@@ -390,12 +202,211 @@ def _ensure_source_styles(document: Document) -> None:
         anchor.font.size = Pt(1)
         anchor.paragraph_format.space_before = Pt(0)
         anchor.paragraph_format.space_after = Pt(0)
+    for name, style_id, size, color in (
+        ("Source Body", "SourceBody", 9.6, "222222"),
+        ("Source Callout", "SourceCallout", 9.6, "222222"),
+        ("Source Option Row", "SourceOptionRow", 9.6, "222222"),
+        ("Source Heading", "SourceHeading", 16.0, "EF168B"),
+    ):
+        if name in document.styles:
+            continue
+        style = document.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)
+        style._element.set(qn("w:styleId"), style_id)
+        style.font.name = "Times New Roman"
+        style._element.rPr.rFonts.set(qn("w:eastAsia"), "SimSun")
+        style.font.size = Pt(size)
+        style.font.color.rgb = RGBColor.from_string(color)
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.space_after = Pt(0)
+
+
+_NATIVE_EDITABLE_TYPES = {
+    "editable_paragraph",
+    "editable_heading",
+    "editable_option_row",
+    "editable_callout_body",
+    "editable_page_number",
+}
+
+
+def _set_native_run_style(
+    run: object,
+    *,
+    font_pt: float,
+    color: str,
+    bold: bool,
+    east_asia_font: str,
+    ascii_font: str,
+    character_spacing_twips: int,
+) -> None:
+    run.font.name = ascii_font  # type: ignore[attr-defined]
+    run.font.size = Pt(font_pt)  # type: ignore[attr-defined]
+    run.font.bold = bold  # type: ignore[attr-defined]
+    run.font.color.rgb = RGBColor.from_string(color)  # type: ignore[attr-defined]
+    properties = run._element.get_or_add_rPr()  # type: ignore[attr-defined]
+    fonts = properties.get_or_add_rFonts()
+    fonts.set(qn("w:ascii"), ascii_font)
+    fonts.set(qn("w:hAnsi"), ascii_font)
+    fonts.set(qn("w:eastAsia"), east_asia_font)
+    if character_spacing_twips:
+        spacing = properties.find(qn("w:spacing"))
+        if spacing is None:
+            spacing = parse_xml('<w:spacing xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>')
+            properties.append(spacing)
+        spacing.set(qn("w:val"), str(character_spacing_twips))
+
+
+def _append_native_text_runs(paragraph: object, block: PageBlock) -> None:
+    text = (block.text or "").replace("\r", "")
+    if not text:
+        return
+    try:
+        font_pt = float(block.style.get("font_size_pt", 9.6))
+    except (TypeError, ValueError):
+        font_pt = 9.6
+    try:
+        accent_length = max(0, min(len(text), int(block.style.get("accent_length", 0))))
+    except (TypeError, ValueError):
+        accent_length = 0
+    try:
+        bold_prefix_length = max(0, min(len(text), int(block.style.get("bold_prefix_length", 0))))
+    except (TypeError, ValueError):
+        bold_prefix_length = 0
+    try:
+        spacing = int(block.style.get("character_spacing_twips", 0))
+    except (TypeError, ValueError):
+        spacing = 0
+    default_color = str(block.style.get("font_color", "222222"))
+    if block.block_type == "editable_heading":
+        default_color = str(block.style.get("font_color", "EF168B"))
+    east_asia_font = str(block.style.get("font_name_east_asia", "SimSun"))
+    ascii_font = str(block.style.get("font_name_ascii", "Times New Roman"))
+    boundaries = sorted({0, len(text), accent_length, bold_prefix_length})
+    for start, end in zip(boundaries, boundaries[1:]):
+        if start >= end:
+            continue
+        color = "EF168B" if start < accent_length else default_color
+        bold = start < bold_prefix_length
+        segment = text[start:end]
+        parts = re.split(r"([\n\t])", segment)
+        for part in parts:
+            if not part:
+                continue
+            if part == "\n":
+                paragraph.add_run().add_break()
+                continue
+            if part == "\t":
+                paragraph.add_run().add_tab()
+                continue
+            run = paragraph.add_run(part)
+            _set_native_run_style(
+                run,
+                font_pt=font_pt,
+                color=color,
+                bold=bold,
+                east_asia_font=east_asia_font,
+                ascii_font=ascii_font,
+                character_spacing_twips=spacing,
+            )
+
+
+def _append_native_source_page(document: Document, model: PageModel, *, bookmark_base: int) -> None:
+    """Place crops and editable paragraphs in source-coordinate page frames.
+
+    ``w:framePr`` keeps the paragraph itself in the main Word document (so it
+    remains searchable/editable and is not a VML textbox) while taking it out
+    of normal vertical flow.  This is essential for formula-heavy source pages:
+    inline numerator/denominator fragments must not push every later paragraph
+    onto a new page.
+    """
+
+    scale_x, scale_y = _page_coordinate_scale(model)
+    canvas = document.add_paragraph()
+    _format_page_paragraph(canvas)
+    canvas.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    canvas.paragraph_format.line_spacing = Pt(1)
+    images = [block for block in model.blocks if block.asset_path]
+    for image_block in sorted(images, key=lambda item: (item.z_index, item.reading_order)):
+        _append_fallback_image(canvas, model, image_block)
+        bookmark = str(image_block.style.get("bookmark_name", "")).strip()
+        if bookmark:
+            _append_bookmark(canvas, bookmark, bookmark_base)
+
+    bookmarks = [
+        str(block.style.get("bookmark_name", "")).strip()
+        for block in model.blocks
+        if block.style.get("bookmark_name")
+    ]
+    if not any(str(block.style.get("bookmark_name", "")).strip() for block in images):
+        for offset, bookmark in enumerate(dict.fromkeys(item for item in bookmarks if item)):
+            _append_bookmark(canvas, bookmark, bookmark_base + offset)
+
+    editable = sorted(
+        (
+            block
+            for block in model.blocks
+            if block.block_type in _NATIVE_EDITABLE_TYPES and block.text and not block.asset_path
+        ),
+        key=lambda item: (item.bbox[1], item.reading_order, item.bbox[0]),
+    )
+    for block in editable:
+        left = max(0.0, block.bbox[0] * scale_x)
+        top = max(0.0, block.bbox[1] * scale_y)
+        right = min(model.size.width_pt, block.bbox[2] * scale_x)
+        paragraph = document.add_paragraph()
+        style_name = {
+            "editable_heading": "Source Heading",
+            "editable_callout_body": "Source Callout",
+            "editable_option_row": "Source Option Row",
+        }.get(block.block_type, "Source Body")
+        paragraph.style = document.styles[style_name]
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.left_indent = Pt(0)
+        paragraph.paragraph_format.right_indent = Pt(0)
+        try:
+            first_line_indent = float(block.style.get("first_line_indent_px", 0.0)) * scale_x
+        except (TypeError, ValueError):
+            first_line_indent = 0.0
+        paragraph.paragraph_format.first_line_indent = Pt(max(0.0, first_line_indent))
+        paragraph.paragraph_format.keep_together = True
+        try:
+            line_spacing = float(block.style.get("line_spacing_pt", 12.0))
+        except (TypeError, ValueError):
+            line_spacing = 12.0
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        paragraph.paragraph_format.line_spacing = Pt(max(10.5, line_spacing))
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        if block.block_type == "editable_option_row":
+            for stop in block.style.get("tab_stops_px", []):
+                try:
+                    paragraph.paragraph_format.tab_stops.add_tab_stop(
+                        Pt(float(stop) * scale_x), WD_TAB_ALIGNMENT.LEFT
+                    )
+                except (TypeError, ValueError):
+                    continue
+        _append_native_text_runs(paragraph, block)
+        try:
+            line_count = max(1, int(block.style.get("line_count", (block.text or "").count("\n") + 1)))
+        except (TypeError, ValueError):
+            line_count = max(1, (block.text or "").count("\n") + 1)
+        source_height = max(1.0, (block.bbox[3] - block.bbox[1]) * scale_y)
+        frame_height = max(source_height + 2.0, line_count * max(10.5, line_spacing) + 2.0)
+        frame_width = max(8.0, right - left)
+        ppr = paragraph._p.get_or_add_pPr()
+        frame = parse_xml(
+            '<w:framePr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+            f'w:w="{round(frame_width * 20)}" w:h="{round(frame_height * 20)}" '
+            f'w:x="{round(left * 20)}" w:y="{round(top * 20)}" '
+            'w:hAnchor="page" w:vAnchor="page" w:wrap="none" w:hRule="exact"/>'
+        )
+        ppr.insert(0, frame)
 
 
 def _append_fallback_image(paragraph: object, model: PageModel, block: PageBlock) -> None:
     if not block.asset_path or not Path(block.asset_path).is_file():
         return
-    style, _, _, _ = _shape_style(block, model)
+    style = _image_shape_style(block, model)
     relationship_id, _ = paragraph.part.get_or_add_image(str(block.asset_path))  # type: ignore[attr-defined]
     xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -407,63 +418,11 @@ def _append_fallback_image(paragraph: object, model: PageModel, block: PageBlock
     paragraph.add_run()._r.append(parse_xml(xml))
 
 
-def _append_vertical_sidebar_text(paragraph: object, model: PageModel, block: PageBlock) -> None:
-    """Write a vertical sidebar label as individually editable glyph boxes."""
-
-    text = "".join((block.text or "").split())
-    if not text:
-        return
-    left, top, right, bottom = block.bbox
-    glyph_height = min(right - left, (bottom - top) / len(text))
-    try:
-        configured_height = float(block.style.get("glyph_height_px"))
-        if configured_height > 0:
-            glyph_height = min(configured_height, (bottom - top) / len(text))
-    except (TypeError, ValueError):
-        pass
-    try:
-        section_break_after = int(block.style.get("section_break_after"))
-        section_break_after = max(0, min(len(text) - 1, section_break_after))
-    except (TypeError, ValueError):
-        section_break_after = 0
-    try:
-        section_gap = max(0.0, float(block.style.get("section_gap_px"))) if section_break_after else 0.0
-    except (TypeError, ValueError):
-        section_gap = 0.0
-    usable_height = max(0.0, bottom - top - glyph_height - section_gap)
-    step = 0.0 if len(text) == 1 else usable_height / (len(text) - 1)
-    for index, glyph in enumerate(text):
-        glyph_top = top + index * step + (section_gap if index >= section_break_after else 0.0)
-        glyph_block = PageBlock(
-            block_id=f"{block.block_id}-glyph-{index + 1}",
-            block_type="text_line",
-            bbox=(left, glyph_top, right, glyph_top + glyph_height),
-            z_index=block.z_index + index,
-            reading_order=block.reading_order + index,
-            text=glyph,
-            style=block.style,
-        )
-        _append_textbox(paragraph, model, glyph_block)
-
-
-def _append_sidebar_accent_rule(paragraph: object, model: PageModel, block: PageBlock) -> None:
-    """Render the page-number accent as an editable VML vector rectangle."""
-
-    style, _, _, _ = _shape_style(block, model)
-    fill_color = str(block.style.get("fill_color", "EF168B"))
-    xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        xmlns:v="urn:schemas-microsoft-com:vml">
-      <v:rect id="pdf2word_sidebar_rule_{escape(block.block_id)}" style="{style}" stroked="f" fillcolor="#{escape(fill_color)}"/>
-    </w:pict>'''
-    paragraph.add_run()._r.append(parse_xml(xml))
-
-
 def create_positioned_editable_docx(models: list[PageModel], output_path: str | Path) -> Path:
-    """Build an editable DOCX using OCR coordinates and image fallbacks.
+    """Build a source-first editable DOCX with local image fallbacks.
 
-    Textual blocks become editable VML text boxes. Complex non-text blocks use
-    their cropped image fallback so the document stays usable even when Word
-    cannot reproduce a region structurally.
+    Ordinary text is accepted only through native editable block types. Legacy
+    line/text blocks are never serialized as VML text boxes.
     """
 
     if not models:
@@ -480,9 +439,22 @@ def create_positioned_editable_docx(models: list[PageModel], output_path: str | 
         if model.page_class == "table_of_contents":
             _append_native_toc_page(document, model)
             continue
-        # All page objects are absolutely positioned. Keeping them in one host
-        # paragraph prevents invisible flow paragraphs from accumulating and
-        # pushing the final positioned objects onto an unwanted next page.
+        if any(block.block_type in _NATIVE_EDITABLE_TYPES for block in model.blocks):
+            _append_native_source_page(document, model, bookmark_base=position * 20 + 1)
+            continue
+        # Image-only pages (cover, divider, final fallback) still use one
+        # absolutely positioned host paragraph. Textual legacy blocks are
+        # rejected instead of silently recreating the retired VML layout.
+        unresolved_text = [
+            block.block_id
+            for block in model.blocks
+            if block.text and not block.asset_path
+        ]
+        if unresolved_text:
+            raise ValueError(
+                "PageModel 仍包含未段落化文字块，拒绝写入旧式 VML 文本框："
+                + ", ".join(unresolved_text)
+            )
         page_canvas = document.add_paragraph()
         _format_page_paragraph(page_canvas)
         bookmark_names = [
@@ -493,22 +465,10 @@ def create_positioned_editable_docx(models: list[PageModel], output_path: str | 
         for bookmark_offset, bookmark_name in enumerate(dict.fromkeys(bookmark_names)):
             _append_bookmark(page_canvas, bookmark_name, position * 10 + bookmark_offset + 1)
         for block in sorted(model.blocks, key=lambda item: (item.z_index, item.reading_order)):
-            if block.block_type == "toc_entry":
-                _append_toc_entry(page_canvas, model, block)
-                continue
-            if block.block_type == "sidebar_vertical_text":
-                _append_vertical_sidebar_text(page_canvas, model, block)
-                continue
-            if block.block_type == "sidebar_accent_rule":
-                _append_sidebar_accent_rule(page_canvas, model, block)
-                continue
             if block.asset_path:
                 _append_fallback_image(page_canvas, model, block)
-            if block.text and not block.asset_path and block.block_type.lower() not in {"image", "chart", "logo", "watermark"}:
-                _append_textbox(page_canvas, model, block)
     document.save(output)
     return output
-
 
 def _extract_page_text(source: str | Path) -> list[str]:
     reader = PdfReader(str(source), strict=False)

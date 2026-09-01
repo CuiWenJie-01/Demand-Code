@@ -6,8 +6,10 @@ from zipfile import ZipFile
 
 from PIL import Image, ImageDraw
 
-from pdf2word_engine.models import PageSize
+from pdf2word_engine.models import PageBlock, PageModel, PageSize, PdfKind
 from pdf2word_engine.source_first import (
+    apply_region_level_static_fallbacks,
+    apply_source_first_hybrid_policy,
     classify_source_page,
     remove_shanganren_watermark,
     toc_page_model,
@@ -69,4 +71,134 @@ def test_front_matter_classification_is_explicit() -> None:
 
     blank = Image.new("RGB", (500, 700), "white")
     assert classify_source_page(1, blank) == "blank"
+
+
+def test_chapter_opener_keeps_body_editable_and_only_crops_header(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=6,
+        page_index=6,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("logo", "text_line", (80, 70, 250, 110), 0, 0, confidence=0.99, text="半月谈"),
+            PageBlock("title", "header", (330, 190, 680, 245), 0, 1, confidence=0.99, text="第一章 解题方法"),
+            PageBlock("q1", "text_line", (145, 340, 900, 375), 0, 2, confidence=0.99, text="1.（2018年国考）正文第一行"),
+            PageBlock("q1b", "text_line", (145, 390, 900, 425), 0, 3, confidence=0.99, text="正文第二行仍应可编辑"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="chapter_opener",
+    )
+
+    decoration = next(block for block in result.blocks if block.block_type == "decoration_image")
+    editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
+    assert decoration.bbox[3] < 340
+    assert "第一章" not in editable_text
+    assert "正文第一行" in editable_text
+    assert "正文第二行" in editable_text
+    assert result.evidence_blocks[0].text == "半月谈"
+
+
+def test_callout_fallback_uses_one_complete_first_row_and_keeps_later_body_editable(tmp_path: Path) -> None:
+    source = tmp_path / "callout.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=8,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("badge", "talk_badge_image", (100, 300, 160, 360), 0, 0),
+            PageBlock("label", "text_line", (170, 305, 230, 350), 0, 1, text="解析", style={"semantic_role": "callout_label"}),
+            PageBlock("first", "text_line", (250, 305, 850, 350), 0, 2, text="第一行与标签必须作为完整源图，不得相互覆盖。"),
+            PageBlock("second", "text_line", (250, 385, 850, 430), 0, 3, text="第二行正文仍然必须可以编辑。"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="ordinary_question",
+    )
+
+    row = next(block for block in result.blocks if block.fallback_mode == "callout_first_row_source_image")
+    editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
+    assert row.bbox[2] > 850
+    assert row.bbox[3] < 385
+    assert "第一行" not in editable_text
+    assert "第二行正文仍然必须可以编辑" in editable_text
+
+
+def test_sidebar_crop_does_not_capture_editable_body_start(tmp_path: Path) -> None:
+    source = tmp_path / "sidebar.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=20,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("sidebar", "aside_text", (60, 900, 90, 1300), 0, 0, text="第三部分数量关系"),
+            PageBlock("body", "text_line", (125, 940, 900, 990), 0, 1, text="=4万吨。正文必须只出现一次。"),
+            PageBlock("page-number", "number", (60, 1330, 120, 1365), 0, 2, text="016"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="formula_heavy",
+    )
+
+    sidebar = next(block for block in result.blocks if block.fallback_mode == "sidebar_source_image")
+    page_number = next(block for block in result.blocks if block.fallback_mode == "sidebar_page_number_source_image")
+    editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
+    assert sidebar.bbox[2] <= 125
+    assert sidebar.bbox[3] <= page_number.bbox[1]
+    assert page_number.bbox[2] > 120
+    assert "=4万吨" in editable_text
+    assert "016" not in editable_text
+
+
+def test_static_gate_replaces_only_failing_region_not_page(tmp_path: Path) -> None:
+    source = tmp_path / "page.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=7,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        page_class="ordinary_question",
+        blocks=[
+            PageBlock("good", "editable_paragraph", (100, 200, 900, 250), 0, 0, confidence=0.99, text="可靠正文"),
+            PageBlock("bad", "editable_paragraph", (100, 300, 900, 350), 0, 1, confidence=0.70, text="低置信度正文"),
+        ],
+    )
+
+    result = apply_region_level_static_fallbacks(model, source, tmp_path / "fallbacks")
+
+    assert any(block.block_id == "good" for block in result.blocks)
+    fallback = next(block for block in result.blocks if block.block_type == "region_fallback_image")
+    assert Path(fallback.asset_path or "").is_file()
+    assert fallback.bbox == (95.0, 295.0, 905.0, 355.0)
+    assert all(block.block_type != "full_page_fallback" for block in result.blocks)
 

@@ -738,7 +738,7 @@ class PaddleResultAdapterTests(unittest.TestCase):
                 self.assertEqual(crop.getpixel((4, 4)), (255, 0, 128))
             self.assertEqual(model.blocks[0].bbox, (2, 2, 8.0, 8.0))
 
-    def test_restores_large_neutral_gray_central_watermark_behind_text(self) -> None:
+    def test_does_not_restore_large_neutral_gray_central_watermark(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             image = root / "page.png"
@@ -759,13 +759,8 @@ class PaddleResultAdapterTests(unittest.TestCase):
 
             materialize_visual_fallbacks(model, image, root / "regions")
 
-            watermark = next(block for block in model.blocks if block.block_type == "watermark")
-            self.assertEqual(watermark.z_index, -1)
-            self.assertTrue(watermark.style["render_behind_text"])
-            self.assertTrue(watermark.asset_path)
-            with Image.open(watermark.asset_path) as asset:
-                self.assertEqual(asset.mode, "RGBA")
-                self.assertEqual(asset.getpixel((10, 10))[3], 255)
+            self.assertFalse(any(block.block_type == "watermark" for block in model.blocks))
+            self.assertFalse((root / "regions" / "source-watermark.png").exists())
 
     def test_ignores_small_neutral_gray_marks_when_detecting_watermark(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .regression import VisualRegressionError, assert_rendered_page_count, assert_positioned_model_contract
-from .models import PageModel
+from .document_checks import DocumentCheckError, assert_rendered_page_count, assert_source_first_docx_contract
 
 
 WORD_EXPORT_FORMAT_PDF = 17
@@ -20,9 +19,7 @@ def render_docx_with_microsoft_word(docx_path: str | Path, output_pdf: str | Pat
     try:
         import win32com.client  # type: ignore[import-not-found]
     except ImportError as exc:
-        raise VisualRegressionError(
-            "Microsoft Word 实机渲染需要安装桌面版 Word 与可选依赖 pywin32。"
-        ) from exc
+        raise DocumentCheckError("Microsoft Word 实机渲染需要安装桌面版 Word 与可选依赖 pywin32。") from exc
     application = None
     document = None
     try:
@@ -52,26 +49,29 @@ def render_docx_with_microsoft_word(docx_path: str | Path, output_pdf: str | Pat
             UseISO19005_1=False,
         )
     except Exception as exc:
-        raise VisualRegressionError(f"Microsoft Word 导出 PDF 失败：{exc}") from exc
+        raise DocumentCheckError(f"Microsoft Word 导出 PDF 失败：{exc}") from exc
     finally:
         if document is not None:
             document.Close(False)
         if application is not None:
             application.Quit()
     if not destination.is_file() or destination.stat().st_size == 0:
-        raise VisualRegressionError("Microsoft Word 未生成有效 PDF。")
+        raise DocumentCheckError("Microsoft Word 未生成有效 PDF。")
     return destination
 
 
 def verify_with_microsoft_word(
     docx_path: str | Path,
-    model: PageModel,
     output_pdf: str | Path,
     *,
-    expected_page_count: int = 1,
+    expected_page_count: int,
+    minimum_editable_characters: int = 1,
 ) -> int:
-    """Run OOXML editability checks then require Word's own page-count result."""
+    """Check current DOCX structure, then require Word's page-count result."""
 
-    assert_positioned_model_contract(docx_path, model)
+    assert_source_first_docx_contract(
+        docx_path,
+        minimum_editable_characters=minimum_editable_characters,
+    )
     rendered = render_docx_with_microsoft_word(docx_path, output_pdf)
     return assert_rendered_page_count(rendered, expected_page_count)

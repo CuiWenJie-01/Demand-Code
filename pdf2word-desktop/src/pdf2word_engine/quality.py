@@ -10,7 +10,7 @@ import unicodedata
 
 from PIL import Image
 
-from .conflicts import static_page_checks
+from .conflicts import overlap_ratio, static_page_checks
 from .models import PageModel
 
 
@@ -59,18 +59,6 @@ def character_error_rate(reference: str, actual: str) -> CharacterErrorRate:
     return CharacterErrorRate(len(expected), errors, errors / len(expected))
 
 
-def model_text_for_cer(model: PageModel, block_ids: list[str] | None = None) -> str:
-    """Extract only editable text in reading order for comparison with a transcript."""
-
-    selected = set(block_ids or [])
-    blocks = sorted(model.blocks, key=lambda block: (block.reading_order, block.z_index, block.block_id))
-    return "".join(
-        block.text or ""
-        for block in blocks
-        if block.text and not block.asset_path and (not selected or block.block_id in selected)
-    )
-
-
 def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
     """Summarize editability and image fallbacks without exposing OCR text."""
 
@@ -82,9 +70,18 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
     full_page_fallbacks: list[int] = []
     low_confidence_pages: list[int] = []
     automatic_repairs = 0
+    coverage_failures: list[int] = []
+    page_coverages: list[float] = []
     for model in sorted(models, key=lambda item: item.page_index):
         fallback_blocks = [
-            {"block_id": block.block_id, "block_type": block.block_type}
+            {
+                "block_id": block.block_id,
+                "block_type": block.block_type,
+                "bbox": [round(value, 2) for value in block.bbox],
+                "fallback_mode": block.fallback_mode,
+                "selection_reason": block.selection_reason,
+                "source": block.source,
+            }
             for block in model.blocks
             if block.asset_path
         ]
@@ -96,11 +93,73 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         overlap_warnings = [item for item in findings if item["type"] == "high_overlap"]
         low_confidence = [item for item in findings if item["type"] == "low_confidence"]
         automatic_repairs += len(model.debug_records)
+        excluded_owner_types = {
+            "formula",
+            "decoration_image",
+            "figure",
+            "chart",
+            "table",
+            "logo",
+            "talk_badge_image",
+            "talk_callout_tag_image",
+            "image",
+        }
+        excluded_owners = [
+            block
+            for block in model.blocks
+            if block.asset_path and block.block_type.lower() in excluded_owner_types
+        ]
+        evidence_seen: set[tuple[str, tuple[int, int, int, int]]] = set()
+        denominator = 0
+        for block in model.evidence_blocks:
+            normalized = normalize_cer_text(block.text or "")
+            if not normalized:
+                continue
+            key = (normalized, tuple(round(item) for item in block.bbox))
+            if key in evidence_seen:
+                continue
+            evidence_seen.add(key)
+            if any(overlap_ratio(block, owner) >= 0.20 for owner in excluded_owners):
+                continue
+            denominator += len(normalized)
+        editable_characters = sum(
+            len(normalize_cer_text(block.text or ""))
+            for block in model.blocks
+            if block.text and not block.asset_path
+        )
+        if denominator <= 0:
+            coverage = 1.0 if editable_characters or model.page_class in {"blank", "cover", "section_divider"} else 0.0
+        else:
+            coverage = min(1.0, editable_characters / denominator)
+        page_coverages.append(coverage)
+        threshold = 0.85 if model.page_class == "ordinary_question" else 0.80 if model.page_class == "chapter_opener" else 0.0
+        coverage_passed = coverage + 1e-9 >= threshold
+        if not coverage_passed:
+            coverage_failures.append(model.page_index + 1)
+        page_area = max(1.0, (model.source_image_width_px or model.size.width_pt) * (model.source_image_height_px or model.size.height_pt))
+        image_area_coverage = min(
+            1.0,
+            sum(max(0.0, block.bbox[2] - block.bbox[0]) * max(0.0, block.bbox[3] - block.bbox[1]) for block in model.blocks if block.asset_path) / page_area,
+        )
         if conflicts:
             conflict_pages.append(model.page_index + 1)
         if low_confidence:
             low_confidence_pages.append(model.page_index + 1)
-        if any(block.block_type == "formula" and block.asset_path for block in model.blocks):
+        explicit_formula_fallback = any(
+            block.block_type == "formula" and block.asset_path for block in model.blocks
+        )
+        formula_heavy_source_crop = model.page_class == "formula_heavy" and any(
+            block.asset_path
+            and block.fallback_mode
+            in {
+                "callout_first_row_source_image",
+                "formula_row_source_image",
+                "formula_line_source_image",
+                "region_source_image_after_static_gate",
+            }
+            for block in model.blocks
+        )
+        if explicit_formula_fallback or formula_heavy_source_crop:
             formula_pages.append(model.page_index + 1)
         if any(block.block_type == "full_page_fallback" for block in model.blocks):
             full_page_fallbacks.append(model.page_index + 1)
@@ -112,6 +171,11 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
                 "page_class": model.page_class,
                 "reconstruction_mode": model.reconstruction_mode,
                 "editable_text_blocks": editable_text_blocks,
+                "editable_characters": editable_characters,
+                "editable_character_coverage": round(coverage, 4),
+                "editable_coverage_threshold": threshold,
+                "editable_coverage_gate": "passed" if coverage_passed else "failed",
+                "image_area_coverage": round(image_area_coverage, 4),
                 "image_fallback_blocks": fallback_blocks,
                 "warnings": model.warnings,
                 "static_findings": findings,
@@ -121,7 +185,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         )
     return {
         "schema_version": 2,
-        "quality_state": "static_checks_passed" if not conflict_pages else "requires_review",
+        "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures else "requires_review",
         "pages": pages,
         "summary": {
             "page_count": len(pages),
@@ -132,9 +196,11 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
             "formula_fallback_pages": formula_pages,
             "full_page_fallback_pages": full_page_fallbacks,
             "low_confidence_pages": low_confidence_pages,
+            "editable_coverage_failure_pages": coverage_failures,
+            "mean_editable_character_coverage": round(fmean(page_coverages), 4) if page_coverages else 0.0,
             "automatic_repairs": automatic_repairs,
             "manual_sampling_pages": sorted(set(conflict_pages + low_confidence_pages + formula_pages + full_page_fallbacks)),
-            "source_word_render_difference": "generated by end-to-end representative gate; full-book raster diff is not implied by static completion",
+            "source_word_render_difference": "generated by the current source-first end-to-end sampling gate; static completion does not imply a full-book raster pass",
         },
     }
 
