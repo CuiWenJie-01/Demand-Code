@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .ocr import paddleocr_capability
+from .execution import resolve_ocr_execution_profile
 from .pipeline import convert_pdf
 from .preflight import inspect_pdf
 from .representative import (
@@ -43,6 +44,8 @@ def _handle(request: dict[str, Any]) -> None:
             dpi=int(request.get("dpi", 200)),
             page_range=request.get("page_range"),
             resume_job_id=request.get("resume_job_id"),
+            ocr_device=str(request.get("ocr_device", "auto")),
+            cpu_threads=int(request["cpu_threads"]) if request.get("cpu_threads") is not None else None,
             progress=lambda payload: _event(request_id, payload),
         )
         _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": result.to_dict()})
@@ -92,12 +95,17 @@ def _handle(request: dict[str, Any]) -> None:
         return
     if command == "ping":
         capability = paddleocr_capability()
+        execution_profile = resolve_ocr_execution_profile("auto")
         _send(
             {
                 "protocol_version": 1,
                 "request_id": request_id,
                 "ok": True,
-                "result": {"status": "ready", "ocr": {"available": capability.available, "engine": capability.engine, "reason": capability.reason}},
+                "result": {
+                    "status": "ready",
+                    "ocr": {"available": capability.available, "engine": capability.engine, "reason": capability.reason},
+                    "recommended_execution_profile": execution_profile.to_dict(),
+                },
             }
         )
         return

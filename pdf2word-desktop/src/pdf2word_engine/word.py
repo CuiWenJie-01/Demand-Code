@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from math import ceil
 from pathlib import Path
+import re
 from xml.sax.saxutils import escape
 
 from docx import Document
 from docx.enum.section import WD_SECTION
+from docx.enum.style import WD_STYLE_TYPE
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
 from docx.oxml import parse_xml
+from docx.oxml.ns import qn
 from docx.shared import Emu, Pt
 from pypdf import PdfReader
 
 from .errors import OcrRequiredError
+from .conflicts import resolve_page_model_conflicts
 from .models import PageBlock, PageModel, PageSize, PdfKind
 
 
@@ -88,6 +93,13 @@ def _shape_style(block: PageBlock, model: PageModel) -> tuple[str, float, str, s
             font_pt = configured_font_pt
     except (TypeError, ValueError):
         pass
+    # One-line OCR boxes are intentionally positioned as one-line boxes.  Do
+    # not let Word wrap a short answer into a neighbouring line.  Tighten a
+    # little first; a page conflict check can choose a source-image fallback
+    # for genuinely unfit content.
+    if block_type == "text_line" and text_length:
+        safe_font = width / max(1.0, text_length * 0.93)
+        font_pt = min(font_pt, max(6.5, safe_font))
     try:
         configured_min_height_pt = float(block.style.get("textbox_min_height_pt"))
         if configured_min_height_pt > 0:
@@ -139,8 +151,14 @@ def _append_textbox(paragraph: object, model: PageModel, block: PageBlock) -> No
         font_pt=font_pt,
         color=color,
         character_spacing_twips=character_spacing_twips,
+        east_asia_font=str(block.style.get("font_name_east_asia", "SimSun")),
+        ascii_font=str(block.style.get("font_name_ascii", "Times New Roman")),
     )
-    alignment = '<w:jc w:val="distribute"/>' if block.style.get("justify_to_bbox") else ""
+    requested_alignment = str(block.style.get("text_alignment", "")).lower()
+    if requested_alignment in {"left", "center", "right", "distribute"}:
+        alignment = f'<w:jc w:val="{requested_alignment}"/>'
+    else:
+        alignment = '<w:jc w:val="distribute"/>' if _should_distribute(block, model, text) else '<w:jc w:val="left"/>'
     xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         xmlns:v="urn:schemas-microsoft-com:vml">
       <v:shape id="pdf2word_text_{escape(block.block_id)}" type="#_x0000_t202" style="{style}" stroked="f" filled="{fill}">
@@ -152,6 +170,18 @@ def _append_textbox(paragraph: object, model: PageModel, block: PageBlock) -> No
     paragraph.add_run()._r.append(parse_xml(xml))
 
 
+def _should_distribute(block: PageBlock, model: PageModel, text: str) -> bool:
+    """Permit spacing expansion only for near-full editable prose lines."""
+
+    if not block.style.get("justify_to_bbox") or len("".join(text.split())) < 18:
+        return False
+    role = str(block.style.get("semantic_role", ""))
+    if role in {"callout_label", "callout_answer", "answer_blank", "solution_short_body", "callout_body_fragment"}:
+        return False
+    page_width = model.source_image_width_px or model.size.width_pt
+    return (block.bbox[2] - block.bbox[0]) >= page_width * 0.62
+
+
 def _textbox_runs(
     text: str,
     *,
@@ -160,6 +190,8 @@ def _textbox_runs(
     font_pt: float,
     color: str,
     character_spacing_twips: int = 0,
+    east_asia_font: str = "SimSun",
+    ascii_font: str = "Times New Roman",
 ) -> str:
     """Serialize editable runs with independently coloured and bold prefixes."""
 
@@ -169,7 +201,7 @@ def _textbox_runs(
         bold_xml = "<w:b/>" if bold else '<w:b w:val="0"/>'
         character_spacing_xml = f'<w:spacing w:val="{character_spacing_twips}"/>' if character_spacing_twips else ""
         return (
-            '<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Microsoft YaHei"/>'
+            f'<w:r><w:rPr><w:rFonts w:ascii="{escape(ascii_font)}" w:hAnsi="{escape(ascii_font)}" w:eastAsia="{escape(east_asia_font)}"/>'
             f'{bold_xml}{character_spacing_xml}<w:color w:val="{run_color}"/><w:sz w:val="{round(font_pt * 2)}"/></w:rPr>'
             f'<w:t xml:space="preserve">{escape(value)}</w:t></w:r>'
         )
@@ -184,6 +216,180 @@ def _textbox_runs(
         for start, end in zip(boundaries, boundaries[1:])
         if start < end
     )
+
+
+def _append_toc_entry(paragraph: object, model: PageModel, block: PageBlock) -> None:
+    """Write one editable TOC-style paragraph with a real dot-leader tab."""
+
+    style, font_pt, color, fill = _shape_style(block, model)
+    scale_x, _ = _page_coordinate_scale(model)
+    width_pt = max(1.0, (block.bbox[2] - block.bbox[0]) * scale_x)
+    tab_position = max(120, round((width_pt - 3.0) * 20))
+    chapter = escape(str(block.style.get("toc_chapter", "")))
+    title = escape(str(block.style.get("toc_title", "")))
+    page_number = escape(str(block.style.get("toc_page", "")))
+    bookmark = str(block.style.get("target_bookmark", "")).strip()
+
+    def run(value: str, *, ascii_font: str = "STSong") -> str:
+        return (
+            '<w:r><w:rPr>'
+            f'<w:rFonts w:ascii="{escape(ascii_font)}" w:hAnsi="{escape(ascii_font)}" w:eastAsia="STSong"/>'
+            f'<w:color w:val="{color}"/><w:sz w:val="{round(font_pt * 2)}"/>'
+            '</w:rPr>'
+            f'<w:t xml:space="preserve">{value}</w:t></w:r>'
+        )
+
+    content = run(f"{chapter}　{title}") + run("<TAB>").replace('<w:t xml:space="preserve">&lt;TAB&gt;</w:t>', '<w:tab/>') + run(page_number, ascii_font="Arial")
+    if bookmark:
+        content = f'<w:hyperlink w:anchor="{escape(bookmark)}" w:history="1">{content}</w:hyperlink>'
+    xml = f'''<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        xmlns:v="urn:schemas-microsoft-com:vml">
+      <v:shape id="pdf2word_toc_{escape(block.block_id)}" type="#_x0000_t202" style="{style}" stroked="f" filled="{fill}">
+        <v:textbox inset="0pt,0pt,0pt,0pt" style="mso-fit-shape-to-text:f"><w:txbxContent><w:p><w:pPr>
+          <w:pStyle w:val="SourceTOC1"/><w:spacing w:before="0" w:after="0" w:line="260"/>
+          <w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{tab_position}"/></w:tabs><w:jc w:val="left"/>
+        </w:pPr>{content}</w:p></w:txbxContent></v:textbox>
+      </v:shape>
+    </w:pict>'''
+    paragraph.add_run()._r.append(parse_xml(xml))
+
+
+def _toc_native_run_xml(value: str, *, font_pt: float, color: str, ascii_font: str = "STSong") -> str:
+    return (
+        '<w:r xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:rPr>'
+        f'<w:rFonts w:ascii="{escape(ascii_font)}" w:hAnsi="{escape(ascii_font)}" w:eastAsia="STSong"/>'
+        f'<w:color w:val="{escape(color)}"/><w:sz w:val="{round(font_pt * 2)}"/>'
+        '</w:rPr>'
+        f'<w:t xml:space="preserve">{escape(value)}</w:t></w:r>'
+    )
+
+
+def _append_native_toc_page(document: Document, model: PageModel) -> None:
+    """Render TOC text as normal Word paragraphs, not floating text boxes."""
+
+    scale_x, scale_y = _page_coordinate_scale(model)
+    decorations = [block for block in model.blocks if block.asset_path and block.block_type == "image"]
+    text_blocks = sorted(
+        (block for block in model.blocks if block.block_type in {"toc_group", "toc_entry"}),
+        key=lambda item: (item.bbox[1], item.reading_order),
+    )
+    if not text_blocks:
+        page_canvas = document.add_paragraph()
+        _format_page_paragraph(page_canvas)
+        for decoration in decorations:
+            _append_fallback_image(page_canvas, model, decoration)
+        return
+
+    first_top = max(1.0, text_blocks[0].bbox[1] * scale_y)
+    canvas_height = 1.0
+    decoration_canvas = document.add_paragraph()
+    _format_page_paragraph(decoration_canvas)
+    decoration_canvas.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    decoration_canvas.paragraph_format.line_spacing = Pt(canvas_height)
+    decoration_canvas.paragraph_format.space_before = Pt(0)
+    decoration_canvas.paragraph_format.space_after = Pt(0)
+    for decoration in decorations:
+        _append_fallback_image(decoration_canvas, model, decoration)
+        bookmark = str(decoration.style.get("bookmark_name", "")).strip()
+        if bookmark:
+            _append_bookmark(decoration_canvas, bookmark, model.page_index * 10 + 1)
+
+    # Use paragraph spacing for the large top offset.  LibreOffice caps an
+    # oversized exact line-height spacer, which previously moved the first TOC
+    # group underneath the decoration strip and made it appear missing.
+    cursor = canvas_height
+    for block in text_blocks:
+        top = block.bbox[1] * scale_y
+        height = max(float(block.style.get("textbox_min_height_pt", 14.0)), (block.bbox[3] - block.bbox[1]) * scale_y)
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_before = Pt(max(0.0, top - cursor))
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        paragraph.paragraph_format.line_spacing = Pt(height)
+        paragraph.paragraph_format.keep_together = True
+        left = block.bbox[0] * scale_x
+        right = block.bbox[2] * scale_x
+        paragraph.paragraph_format.left_indent = Pt(left)
+        paragraph.paragraph_format.right_indent = Pt(max(0.0, model.size.width_pt - right))
+        font_pt = float(block.style.get("font_size_pt", 10.5))
+        color = str(block.style.get("font_color", "F4008A"))
+        if block.block_type == "toc_group":
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            wrapper = parse_xml(
+                '<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                + _toc_native_run_xml(block.text or "", font_pt=font_pt, color=color)
+                + '</w:root>'
+            )
+            for child in list(wrapper):
+                paragraph._p.append(child)
+        else:
+            paragraph.style = document.styles["Source TOC 1"]
+            paragraph.paragraph_format.tab_stops.add_tab_stop(
+                Pt(max(left + 20.0, right - 3.0)),
+                WD_TAB_ALIGNMENT.RIGHT,
+                WD_TAB_LEADER.DOTS,
+            )
+            chapter = str(block.style.get("toc_chapter", ""))
+            title = str(block.style.get("toc_title", ""))
+            page_number = str(block.style.get("toc_page", ""))
+            content = (
+                _toc_native_run_xml(f"{chapter}　{title}", font_pt=font_pt, color=color)
+                + _toc_native_run_xml("<TAB>", font_pt=font_pt, color=color).replace(
+                    '<w:t xml:space="preserve">&lt;TAB&gt;</w:t>', '<w:tab/>'
+                )
+                + _toc_native_run_xml(page_number, font_pt=font_pt, color=color, ascii_font="Arial")
+            )
+            bookmark = str(block.style.get("target_bookmark", "")).strip()
+            if bookmark:
+                element = parse_xml(
+                    f'<w:hyperlink xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                    f'w:anchor="{escape(bookmark)}" w:history="1">{content}</w:hyperlink>'
+                )
+                paragraph._p.append(element)
+            else:
+                wrapper = parse_xml(
+                    '<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                    + content
+                    + '</w:root>'
+                )
+                for child in list(wrapper):
+                    paragraph._p.append(child)
+        cursor = top + height
+
+
+def _append_bookmark(paragraph: object, name: str, bookmark_id: int) -> None:
+    """Add a zero-layout internal-link target to the current source page."""
+
+    safe_name = re.sub(r"[^A-Za-z0-9_]", "_", name)[:40]
+    # Adjacent start/end elements are a valid zero-layout target.  A previous
+    # hidden zero-width run caused LibreOffice to drop VML image shapes sharing
+    # the paragraph, yielding blank cover pages during render verification.
+    xml = f'''<w:bookmarkStart xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:id="{bookmark_id}" w:name="{escape(safe_name)}"/>
+    <w:bookmarkEnd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:id="{bookmark_id}"/>'''
+    wrapper = parse_xml(f'<w:root xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{xml}</w:root>')
+    for child in list(wrapper):
+        paragraph._p.append(child)  # type: ignore[attr-defined]
+
+
+def _ensure_source_styles(document: Document) -> None:
+    """Install explicit styles used by the source-faithful Word structure."""
+
+    if "Source TOC 1" not in document.styles:
+        toc = document.styles.add_style("Source TOC 1", WD_STYLE_TYPE.PARAGRAPH)
+        toc._element.set(qn("w:styleId"), "SourceTOC1")
+        toc.font.name = "STSong"
+        toc._element.rPr.rFonts.set(qn("w:eastAsia"), "STSong")
+        toc.font.size = Pt(10.5)
+        toc.paragraph_format.space_before = Pt(0)
+        toc.paragraph_format.space_after = Pt(0)
+    if "Source Chapter Anchor" not in document.styles:
+        anchor = document.styles.add_style("Source Chapter Anchor", WD_STYLE_TYPE.PARAGRAPH)
+        anchor._element.set(qn("w:styleId"), "SourceChapterAnchor")
+        anchor.base_style = document.styles["Heading 1"]
+        anchor.font.hidden = True
+        anchor.font.size = Pt(1)
+        anchor.paragraph_format.space_before = Pt(0)
+        anchor.paragraph_format.space_after = Pt(0)
 
 
 def _append_fallback_image(paragraph: object, model: PageModel, block: PageBlock) -> None:
@@ -262,18 +468,34 @@ def create_positioned_editable_docx(models: list[PageModel], output_path: str | 
 
     if not models:
         raise ValueError("没有可写入 DOCX 的 PageModel。")
+    for model in models:
+        resolve_page_model_conflicts(model)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     document = Document()
+    _ensure_source_styles(document)
     for position, model in enumerate(sorted(models, key=lambda item: item.page_index)):
         section = document.sections[0] if position == 0 else document.add_section(WD_SECTION.NEW_PAGE)
         _set_page_geometry(section, model.size)
+        if model.page_class == "table_of_contents":
+            _append_native_toc_page(document, model)
+            continue
         # All page objects are absolutely positioned. Keeping them in one host
         # paragraph prevents invisible flow paragraphs from accumulating and
         # pushing the final positioned objects onto an unwanted next page.
         page_canvas = document.add_paragraph()
         _format_page_paragraph(page_canvas)
+        bookmark_names = [
+            str(block.style.get("bookmark_name"))
+            for block in model.blocks
+            if block.style.get("bookmark_name")
+        ]
+        for bookmark_offset, bookmark_name in enumerate(dict.fromkeys(bookmark_names)):
+            _append_bookmark(page_canvas, bookmark_name, position * 10 + bookmark_offset + 1)
         for block in sorted(model.blocks, key=lambda item: (item.z_index, item.reading_order)):
+            if block.block_type == "toc_entry":
+                _append_toc_entry(page_canvas, model, block)
+                continue
             if block.block_type == "sidebar_vertical_text":
                 _append_vertical_sidebar_text(page_canvas, model, block)
                 continue

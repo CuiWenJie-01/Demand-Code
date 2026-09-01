@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-# Version 4 adds focused OCR for prose missed beside ``谈…`` image tags.
-# Cached models can still be rebuilt from the adjacent raw Paddle JSON without
-# running the full-page OCR pass again.
-PAGE_MODEL_SCHEMA_VERSION = 4
+# Version 6 adds explicit page classification and reconstruction mode.  Those
+# fields are intentionally page-level: a cover, a Word-native table of
+# contents, and an ordinary exam page must never be sent through the same
+# reconstruction policy merely because they share OCR-shaped blocks.
+PAGE_MODEL_SCHEMA_VERSION = 6
 
 
 class PdfKind(str, Enum):
@@ -86,6 +87,12 @@ class PageBlock:
     style: dict[str, Any] = field(default_factory=dict)
     asset_path: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # These are intentionally first-class fields instead of opaque ``style``
+    # values.  They make a generated PageModel auditable without retaining a
+    # second copy of all raw OCR output.
+    source: str | None = None
+    selection_reason: str | None = None
+    fallback_mode: str | None = None
 
 
 @dataclass(slots=True)
@@ -100,6 +107,10 @@ class PageModel:
     source_image_height_px: int | None = None
     blocks: list[PageBlock] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    debug_records: list[dict[str, Any]] = field(default_factory=list)
+    page_class: str = "ordinary"
+    reconstruction_mode: str = "hybrid"
+    source_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -135,6 +146,9 @@ class PageModel:
                     style=dict(raw_block.get("style", {})) if isinstance(raw_block.get("style"), Mapping) else {},
                     asset_path=str(raw_block["asset_path"]) if raw_block.get("asset_path") else None,
                     warnings=[str(item) for item in raw_block.get("warnings", [])] if isinstance(raw_block.get("warnings"), list) else [],
+                    source=str(raw_block["source"]) if raw_block.get("source") else None,
+                    selection_reason=str(raw_block["selection_reason"]) if raw_block.get("selection_reason") else None,
+                    fallback_mode=str(raw_block["fallback_mode"]) if raw_block.get("fallback_mode") else None,
                 )
             )
         return cls(
@@ -146,6 +160,10 @@ class PageModel:
             source_image_height_px=int(value["source_image_height_px"]) if value.get("source_image_height_px") else None,
             blocks=blocks,
             warnings=[str(item) for item in value.get("warnings", [])] if isinstance(value.get("warnings"), list) else [],
+            debug_records=[dict(item) for item in value.get("debug_records", []) if isinstance(item, Mapping)],
+            page_class=str(value.get("page_class", "ordinary")),
+            reconstruction_mode=str(value.get("reconstruction_mode", "hybrid")),
+            source_fingerprint=str(value["source_fingerprint"]) if value.get("source_fingerprint") else None,
         )
 
 

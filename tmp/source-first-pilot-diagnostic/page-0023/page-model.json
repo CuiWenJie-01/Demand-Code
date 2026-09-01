@@ -1,0 +1,1452 @@
+{
+  "schema_version": 5,
+  "page_index": 22,
+  "size": {
+    "width_pt": 515.906,
+    "height_pt": 728.504
+  },
+  "source_type": "outlined",
+  "source_image_width_px": 2150,
+  "source_image_height_px": 3036,
+  "blocks": [
+    {
+      "block_id": "0",
+      "block_type": "header",
+      "bbox": [
+        128.0,
+        179.0,
+        403.0,
+        237.0
+      ],
+      "z_index": 0,
+      "reading_order": 0,
+      "confidence": null,
+      "text": "CHIN 半月谈",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\0.png",
+      "warnings": [],
+      "source": "PaddleOCR layout",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "1",
+      "block_type": "aside_text",
+      "bbox": [
+        128.0,
+        2507.0,
+        170.0,
+        2807.0
+      ],
+      "z_index": 1,
+      "reading_order": 1,
+      "confidence": null,
+      "text": "第三部分数量关系",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR layout",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "2",
+      "block_type": "doc_title",
+      "bbox": [
+        751.0,
+        486.0,
+        1491.0,
+        579.0
+      ],
+      "z_index": 2,
+      "reading_order": 1,
+      "confidence": null,
+      "text": "第二章工程问题",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR layout",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-5",
+      "block_type": "text_line",
+      "bbox": [
+        354.0,
+        741.0,
+        1982.0,
+        786.0
+      ],
+      "z_index": 304,
+      "reading_order": 204,
+      "confidence": 0.9973738789558411,
+      "text": "1.（2018年广东省考）工厂的两个车间共同组装6300辆自行车。如果先由一号车间",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_heading",
+        "font_size_pt": 8.0,
+        "accent_length": 13,
+        "bold_prefix_length": 2,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-6",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        824.0,
+        1980.0,
+        868.0
+      ],
+      "z_index": 305,
+      "reading_order": 205,
+      "confidence": 0.9929797649383545,
+      "text": "组装8天，再由二号车间组装3天，刚好可以完成任务；如果先由二号车间组装6天，",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-7",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        905.0,
+        1985.0,
+        949.0
+      ],
+      "z_index": 306,
+      "reading_order": 206,
+      "confidence": 0.9987549185752869,
+      "text": "再由一号车间组装6天，也刚好可以完成任务。则一号车间每天比二号车间多组装多少辆",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-8",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        982.0,
+        428.0,
+        1035.0
+      ],
+      "z_index": 307,
+      "reading_order": 207,
+      "confidence": 0.9410569071769714,
+      "text": "自行车?",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-9",
+      "block_type": "text_line",
+      "bbox": [
+        1944.0,
+        982.0,
+        1986.0,
+        1031.0
+      ],
+      "z_index": 308,
+      "reading_order": 208,
+      "confidence": 0.9656088352203369,
+      "text": "）",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "answer_blank",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "3-line-9-reconstructed-pair",
+      "block_type": "text_line",
+      "bbox": [
+        1890.0,
+        982.0,
+        1932.0,
+        1031.0
+      ],
+      "z_index": 309,
+      "reading_order": 209,
+      "confidence": null,
+      "text": "（",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "reconstructed answer blank",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "answer_blank",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "reconstructed answer blank",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "4-line-10",
+      "block_type": "text_line",
+      "bbox": [
+        348.0,
+        1066.0,
+        494.0,
+        1113.0
+      ],
+      "z_index": 409,
+      "reading_order": 309,
+      "confidence": 0.9485228657722473,
+      "text": "A. 210",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "4-line-11",
+      "block_type": "text_line",
+      "bbox": [
+        775.0,
+        1066.0,
+        923.0,
+        1113.0
+      ],
+      "z_index": 410,
+      "reading_order": 310,
+      "confidence": 0.957996666431427,
+      "text": "B. 180",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "4-line-12",
+      "block_type": "text_line",
+      "bbox": [
+        1210.0,
+        1067.0,
+        1356.0,
+        1114.0
+      ],
+      "z_index": 411,
+      "reading_order": 311,
+      "confidence": 0.9408826231956482,
+      "text": "C. 150",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "4-line-13",
+      "block_type": "text_line",
+      "bbox": [
+        1639.0,
+        1068.0,
+        1787.0,
+        1114.0
+      ],
+      "z_index": 412,
+      "reading_order": 312,
+      "confidence": 0.94493168592453,
+      "text": "D. 130",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "5-talk-marker-14",
+      "block_type": "talk_badge_image",
+      "bbox": [
+        349.0,
+        1160.0,
+        413.0,
+        1229.0
+      ],
+      "z_index": 499,
+      "reading_order": 399,
+      "confidence": null,
+      "text": null,
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "talk_badge_image",
+        "layout_block_id": "5"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\5-talk-marker-14.png",
+      "warnings": [],
+      "source": "source PDF crop",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "5-line-15",
+      "block_type": "text_line",
+      "bbox": [
+        441.0,
+        1174.0,
+        536.0,
+        1224.0
+      ],
+      "z_index": 514,
+      "reading_order": 414,
+      "confidence": 0.9999060034751892,
+      "text": "指数",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "5-line-16",
+      "block_type": "text_line",
+      "bbox": [
+        568.0,
+        1170.0,
+        964.0,
+        1226.0
+      ],
+      "z_index": 515,
+      "reading_order": 415,
+      "confidence": 0.8868644833564758,
+      "text": "易错指数☆★☆☆☆",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "editable rating classified from source star ink",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_index",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable rating classified from source star ink",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "5-line-17",
+      "block_type": "text_line",
+      "bbox": [
+        1022.0,
+        1178.0,
+        1400.0,
+        1221.0
+      ],
+      "z_index": 516,
+      "reading_order": 416,
+      "confidence": 0.9893875122070312,
+      "text": "易考指数★★☆☆☆",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "editable rating classified from source star ink",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_index",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable rating classified from source star ink",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "6-talk-marker-18",
+      "block_type": "talk_badge_image",
+      "bbox": [
+        351.0,
+        1271.0,
+        415.0,
+        1334.0
+      ],
+      "z_index": 599,
+      "reading_order": 499,
+      "confidence": null,
+      "text": null,
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "talk_badge_image",
+        "layout_block_id": "6",
+        "callout_label": "解析",
+        "source": "source talk badge with editable adjacent label",
+        "callout_label_bbox": [
+          444.0,
+          1281.0,
+          522.0,
+          1330.0
+        ]
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\6-talk-marker-18.png",
+      "warnings": [],
+      "source": "source PDF crop",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "6-talk-marker-18-editable-label",
+      "block_type": "text_line",
+      "bbox": [
+        444.0,
+        1281.0,
+        522.0,
+        1330.0
+      ],
+      "z_index": 600,
+      "reading_order": 500,
+      "confidence": null,
+      "text": "解析",
+      "style": {
+        "semantic_role": "callout_label",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable label beside source talk badge"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable label beside source talk badge",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "6-line-20",
+      "block_type": "text_line",
+      "bbox": [
+        575.0,
+        1282.0,
+        1980.0,
+        1331.0
+      ],
+      "z_index": 619,
+      "reading_order": 519,
+      "confidence": 0.9933124780654907,
+      "text": "根据题意，设一号车间、二号车间每天分别组装x辆、y辆自行车。那么，",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "6-line-23",
+      "block_type": "text_line",
+      "bbox": [
+        272.0,
+        1445.0,
+        750.0,
+        1489.0
+      ],
+      "z_index": 622,
+      "reading_order": 522,
+      "confidence": 0.998458981513977,
+      "text": "装630-420=210辆自行车。",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "6-line-21-merged-fragments",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        1369.0,
+        821.0,
+        1409.0
+      ],
+      "z_index": 620,
+      "reading_order": 520,
+      "confidence": 0.9599031805992126,
+      "text": "8x+3y=6300，6x+6y=6300,",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "7-line-24",
+      "block_type": "text_line",
+      "bbox": [
+        351.0,
+        1544.0,
+        436.0,
+        1605.0
+      ],
+      "z_index": 723,
+      "reading_order": 623,
+      "confidence": 0.9896227121353149,
+      "text": "谈",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "7-line-25",
+      "block_type": "text_line",
+      "bbox": [
+        424.0,
+        1552.0,
+        538.0,
+        1605.0
+      ],
+      "z_index": 724,
+      "reading_order": 624,
+      "confidence": 0.9995390176773071,
+      "text": "答案",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "7-line-26",
+      "block_type": "text_line",
+      "bbox": [
+        571.0,
+        1561.0,
+        607.0,
+        1600.0
+      ],
+      "z_index": 725,
+      "reading_order": 625,
+      "confidence": 0.9917656779289246,
+      "text": "A",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "8",
+      "block_type": "image",
+      "bbox": [
+        347.0,
+        1634.0,
+        433.0,
+        1714.0
+      ],
+      "z_index": 8,
+      "reading_order": 8,
+      "confidence": null,
+      "text": "谈",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\8.png",
+      "warnings": [],
+      "source": "PaddleOCR layout",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "9-talk-label-marker-28",
+      "block_type": "talk_badge_image",
+      "bbox": [
+        393.0,
+        1650.0,
+        457.0,
+        1727.0
+      ],
+      "z_index": 899,
+      "reading_order": 699,
+      "confidence": null,
+      "text": null,
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "talk_badge_image",
+        "layout_block_id": "9",
+        "callout_label": "提示",
+        "callout_label_bbox": [
+          461.0,
+          1663.0,
+          539.0,
+          1712.0
+        ],
+        "source": "source talk badge with editable adjacent label"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\9-talk-label-marker-28.png",
+      "warnings": [],
+      "source": "source PDF crop",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "9-talk-label-marker-28-editable-label",
+      "block_type": "text_line",
+      "bbox": [
+        461.0,
+        1663.0,
+        539.0,
+        1712.0
+      ],
+      "z_index": 900,
+      "reading_order": 700,
+      "confidence": null,
+      "text": "提示",
+      "style": {
+        "semantic_role": "callout_label",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable label beside source talk badge"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable label beside source talk badge",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "9-line-29",
+      "block_type": "text_line",
+      "bbox": [
+        573.0,
+        1666.0,
+        1674.0,
+        1710.0
+      ],
+      "z_index": 928,
+      "reading_order": 728,
+      "confidence": 0.9996685981750488,
+      "text": "本题是工程类问题，通过合理设置未知数可以简化解题过程。",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-30",
+      "block_type": "text_line",
+      "bbox": [
+        351.0,
+        1814.0,
+        1960.0,
+        1857.0
+      ],
+      "z_index": 1029,
+      "reading_order": 829,
+      "confidence": 0.998583972454071,
+      "text": "2.（2017年北京市考）某工厂生产甲和乙两种产品，甲产品的日产量是乙产品的1.5倍。",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_heading",
+        "font_size_pt": 8.0,
+        "accent_length": 13,
+        "bold_prefix_length": 2,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-31",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        1894.0,
+        1980.0,
+        1937.0
+      ],
+      "z_index": 1030,
+      "reading_order": 830,
+      "confidence": 0.9997740387916565,
+      "text": "现工厂改进了乙产品的生产技术，在保证产量不变的前提下，其单件产品生产能耗降低了",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-32",
+      "block_type": "text_line",
+      "bbox": [
+        269.0,
+        1975.0,
+        1982.0,
+        2019.0
+      ],
+      "z_index": 1031,
+      "reading_order": 831,
+      "confidence": 0.9988980889320374,
+      "text": "20%，而每日工厂生产甲和乙两种产品的总能耗降低了10%。则在改进后，甲、乙两种产品的",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-33",
+      "block_type": "text_line",
+      "bbox": [
+        273.0,
+        2057.0,
+        644.0,
+        2098.0
+      ],
+      "z_index": 1032,
+      "reading_order": 832,
+      "confidence": 0.9996222257614136,
+      "text": "单件生产能耗之比为",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "question_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-34",
+      "block_type": "text_line",
+      "bbox": [
+        1827.0,
+        2058.0,
+        1861.0,
+        2101.0
+      ],
+      "z_index": 1033,
+      "reading_order": 833,
+      "confidence": 0.7205712199211121,
+      "text": "（",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "answer_blank",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "10-line-35",
+      "block_type": "text_line",
+      "bbox": [
+        1942.0,
+        2058.0,
+        1973.0,
+        2096.0
+      ],
+      "z_index": 1034,
+      "reading_order": 834,
+      "confidence": 0.939422607421875,
+      "text": "）",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "answer_blank",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "11-line-36",
+      "block_type": "text_line",
+      "bbox": [
+        348.0,
+        2134.0,
+        536.0,
+        2183.0
+      ],
+      "z_index": 1135,
+      "reading_order": 935,
+      "confidence": 0.8603425621986389,
+      "text": "A.2 : 3",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "11-line-37",
+      "block_type": "text_line",
+      "bbox": [
+        777.0,
+        2136.0,
+        963.0,
+        2182.0
+      ],
+      "z_index": 1136,
+      "reading_order": 936,
+      "confidence": 0.8623744249343872,
+      "text": "B. 3 : 4",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "11-line-38",
+      "block_type": "text_line",
+      "bbox": [
+        1211.0,
+        2136.0,
+        1396.0,
+        2183.0
+      ],
+      "z_index": 1137,
+      "reading_order": 937,
+      "confidence": 0.937480092048645,
+      "text": "C. 4 : 5",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "11-line-39",
+      "block_type": "text_line",
+      "bbox": [
+        1639.0,
+        2138.0,
+        1828.0,
+        2182.0
+      ],
+      "z_index": 1138,
+      "reading_order": 938,
+      "confidence": 0.9080668091773987,
+      "text": "D. 5: 6",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "12",
+      "block_type": "image",
+      "bbox": [
+        347.0,
+        2216.0,
+        434.0,
+        2297.0
+      ],
+      "z_index": 12,
+      "reading_order": 12,
+      "confidence": null,
+      "text": "谈",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\12.png",
+      "warnings": [],
+      "source": "PaddleOCR layout",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "13-talk-index-label",
+      "block_type": "text_line",
+      "bbox": [
+        442.0,
+        2245.0,
+        561.0,
+        2288.0
+      ],
+      "z_index": 1299,
+      "reading_order": 999,
+      "confidence": null,
+      "text": "指数",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "callout_index",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable talk index label"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable talk index label",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "13-index-42",
+      "block_type": "text_line",
+      "bbox": [
+        573.0,
+        2249.0,
+        951.0,
+        2290.0
+      ],
+      "z_index": 1341,
+      "reading_order": 1041,
+      "confidence": 0.9992990493774414,
+      "text": "易错指数★★☆☆★",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "callout_index",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable rating classified from source star ink"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable rating classified from source star ink",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "13-index-43",
+      "block_type": "text_line",
+      "bbox": [
+        1021.0,
+        2248.0,
+        1399.0,
+        2291.0
+      ],
+      "z_index": 1342,
+      "reading_order": 1042,
+      "confidence": 0.993597149848938,
+      "text": "易考指数★★☆★☆",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "callout_index",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable rating classified from source star ink"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable rating classified from source star ink",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "14-talk-marker-44",
+      "block_type": "talk_badge_image",
+      "bbox": [
+        351.0,
+        2343.0,
+        415.0,
+        2406.0
+      ],
+      "z_index": 1399,
+      "reading_order": 1099,
+      "confidence": null,
+      "text": null,
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "talk_badge_image",
+        "layout_block_id": "14",
+        "callout_label": "解析",
+        "source": "source talk badge with editable adjacent label",
+        "callout_label_bbox": [
+          446.0,
+          2353.0,
+          524.0,
+          2402.0
+        ]
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\14-talk-marker-44.png",
+      "warnings": [],
+      "source": "source PDF crop",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "14-talk-marker-44-editable-label",
+      "block_type": "text_line",
+      "bbox": [
+        446.0,
+        2353.0,
+        524.0,
+        2402.0
+      ],
+      "z_index": 1400,
+      "reading_order": 1100,
+      "confidence": null,
+      "text": "解析",
+      "style": {
+        "semantic_role": "callout_label",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable label beside source talk badge"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable label beside source talk badge",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "14-line-46",
+      "block_type": "text_line",
+      "bbox": [
+        577.0,
+        2354.0,
+        1984.0,
+        2399.0
+      ],
+      "z_index": 1445,
+      "reading_order": 1145,
+      "confidence": 0.9990676641464233,
+      "text": "根据题意，假设改进前甲乙两种产品的日产量分别为3a、2a，单件生产能耗",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "14-line-47",
+      "block_type": "text_line",
+      "bbox": [
+        270.0,
+        2433.0,
+        1981.0,
+        2484.0
+      ],
+      "z_index": 1446,
+      "reading_order": 1146,
+      "confidence": 0.9899502396583557,
+      "text": "分别为χ、y。乙产品单件生产能耗降低20%后，变为80%y，甲和乙两种产品的总能耗降低了",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "14-line-49",
+      "block_type": "text_line",
+      "bbox": [
+        270.0,
+        2516.0,
+        1984.0,
+        2563.0
+      ],
+      "z_index": 1448,
+      "reading_order": 1148,
+      "confidence": 0.9563736319541931,
+      "text": "10%，即2a×80%y+3ax=（1-10%)（3ax+2axy)，计算可得x：y=2：3。改进后甲、乙两",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "14-line-50",
+      "block_type": "text_line",
+      "bbox": [
+        271.0,
+        2598.0,
+        1481.0,
+        2643.0
+      ],
+      "z_index": 1449,
+      "reading_order": 1149,
+      "confidence": 0.9466873407363892,
+      "text": "种产品的单件生产能耗之比为x：80%y=2：（3×80%）=5：6。",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "15-line-53",
+      "block_type": "text_line",
+      "bbox": [
+        572.0,
+        2712.0,
+        606.0,
+        2751.0
+      ],
+      "z_index": 1552,
+      "reading_order": 1252,
+      "confidence": 0.9960605502128601,
+      "text": "D",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "PaddleOCR line",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body",
+        "font_size_pt": 8.0,
+        "justify_to_bbox": true
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "PaddleOCR line",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "16",
+      "block_type": "number",
+      "bbox": [
+        127.0,
+        2889.0,
+        212.0,
+        2922.0
+      ],
+      "z_index": 16,
+      "reading_order": 16,
+      "confidence": null,
+      "text": "018",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "semantic_role": "sidebar_page_number",
+        "font_size_pt": 8.5
+      },
+      "asset_path": null,
+      "warnings": [
+        "页码 OCR 前置杂字已清理。"
+      ],
+      "source": "PaddleOCR layout",
+      "selection_reason": "removed leading sidebar OCR artifact from three-digit running page number",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "15-line-52-inline-talk-badge",
+      "block_type": "talk_badge_image",
+      "bbox": [
+        348.0,
+        2693.0,
+        412.0,
+        2763.0
+      ],
+      "z_index": 1549,
+      "reading_order": 1249,
+      "confidence": null,
+      "text": null,
+      "style": {
+        "semantic_role": "talk_badge_image",
+        "source": "source talk badge"
+      },
+      "asset_path": "D:\\code\\Demand-Code\\tmp\\source-first-pilot-diagnostic\\page-0023\\regions\\15-line-52-inline-talk-badge.png",
+      "warnings": [],
+      "source": "source PDF crop",
+      "selection_reason": "visual region cannot be reconstructed reliably",
+      "fallback_mode": "region_source_image"
+    },
+    {
+      "block_id": "15-line-52-editable-答案-label",
+      "block_type": "text_line",
+      "bbox": [
+        416.0,
+        2705.0,
+        494.0,
+        2761.0
+      ],
+      "z_index": 1550,
+      "reading_order": 1250,
+      "confidence": null,
+      "text": "答案",
+      "style": {
+        "semantic_role": "callout_label",
+        "font_size_pt": 8.0,
+        "font_color": "EF168B",
+        "source": "editable label beside source talk badge"
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "editable label beside source talk badge",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    },
+    {
+      "block_id": "6-line-21-merged-fragments-focused-tail",
+      "block_type": "text_line",
+      "bbox": [
+        821.0,
+        1365.0,
+        1993.0,
+        1411.0
+      ],
+      "z_index": 621,
+      "reading_order": 521,
+      "confidence": null,
+      "text": "通过计算可得出x=630，y=420。一号车间每天比二号车间多组",
+      "style": {
+        "ocr_engine": "PaddleOCR PP-StructureV3",
+        "source": "focused PaddleOCR line fragment",
+        "layout_profile": "cn_exam_question_v1",
+        "semantic_role": "callout_body_fragment",
+        "font_size_pt": 7.0,
+        "justify_to_bbox": false
+      },
+      "asset_path": null,
+      "warnings": [],
+      "source": "focused PaddleOCR line fragment",
+      "selection_reason": "retained editable OCR after conflict resolution",
+      "fallback_mode": null
+    }
+  ],
+  "warnings": [
+    "已使用 47 条行级 OCR 坐标重建正文。",
+    "冲突消解器已处理 2 个块决策。"
+  ],
+  "debug_records": [
+    {
+      "action": "removed",
+      "block_id": "source-watermark",
+      "block_type": "watermark",
+      "source": "neutral-gray central watermark",
+      "reason": "user-requested removal of 上岸人 watermark",
+      "related_block_ids": [],
+      "bbox": [
+        603.0,
+        1087.0,
+        1676.0,
+        2001.0
+      ],
+      "text_preview": ""
+    },
+    {
+      "action": "removed",
+      "block_id": "5-talk-index-label",
+      "block_type": "text_line",
+      "source": "editable talk index label",
+      "reason": "covered by exclusive source-image fallback",
+      "related_block_ids": [
+        "5-talk-marker-14"
+      ],
+      "bbox": [
+        348.0,
+        1157.0,
+        556.0,
+        1222.0
+      ],
+      "text_preview": "指数"
+    }
+  ]
+}

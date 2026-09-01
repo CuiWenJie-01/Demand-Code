@@ -73,6 +73,42 @@ def _relative_path(value: object, root: Path) -> Path | None:
     return (root / str(value)).resolve()
 
 
+def load_representative_page_model(page: RepresentativePage) -> PageModel:
+    """Load a representative PageModel and resolve its bundled image assets.
+
+    Conversion-job checkpoints deliberately keep absolute asset paths: their
+    lifetime is the job workspace.  A representative baseline is different:
+    it must be movable and remain rebuildable after temporary job directories
+    have been cleaned.  Relative ``asset_path`` values are therefore resolved
+    beside the PageModel when it is loaded through the representative workflow.
+    """
+
+    if not page.model_path or not page.model_path.is_file():
+        raise VisualRegressionError(f"代表页 {page.page_number} 缺少 PageModel。")
+    try:
+        payload = json.loads(page.model_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise VisualRegressionError(f"无法读取代表页 {page.page_number} 的 PageModel。") from exc
+    if not isinstance(payload, Mapping):
+        raise VisualRegressionError(f"代表页 {page.page_number} 的 PageModel 格式无效。")
+    blocks = payload.get("blocks")
+    if isinstance(blocks, list):
+        for block in blocks:
+            if not isinstance(block, dict) or not isinstance(block.get("asset_path"), str):
+                continue
+            asset = Path(block["asset_path"])
+            if not asset.is_absolute():
+                bundled_asset = page.model_path.parent / asset
+                # Older local baselines used project-root-relative paths.  Keep
+                # them working while preferring the portable asset bundled next
+                # to the PageModel.
+                if bundled_asset.is_file() or not asset.is_file():
+                    block["asset_path"] = str(bundled_asset.resolve())
+                else:
+                    block["asset_path"] = str(asset.resolve())
+    return PageModel.from_dict(payload)
+
+
 def load_representative_manifest(path: str | Path) -> RepresentativeManifest:
     """Load the checked-in page selection without binding it to a PDF path."""
 
@@ -170,7 +206,7 @@ def run_representative_regressions(
                 raise VisualRegressionError(f"黄金页 {page.page_number} 的基准工件不存在。")
             pending.append(page.page_number)
             continue
-        model = PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+        model = load_representative_page_model(page)
         reports.append(verify_golden_page(page.docx_path, model, renderer=renderer))
         passed.append(page.page_number)
     if strict and pending:
@@ -323,7 +359,7 @@ def write_cer_templates(manifest: RepresentativeManifest, output_directory: str 
     for page in manifest.pages:
         if not page.model_path or not page.model_path.is_file():
             raise VisualRegressionError(f"代表页 {page.page_number} 缺少 PageModel，无法生成 CER 模板。")
-        model = PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+        model = load_representative_page_model(page)
         segments = _review_segments(model, independent_text={}, low_confidence_threshold=0.90)
         output = destination / f"page-{page.page_number:04d}.json"
         if not segments:
@@ -396,7 +432,7 @@ def _review_page(manifest: RepresentativeManifest, page_number: int) -> Represen
 def _load_review_model(page: RepresentativePage) -> PageModel:
     if not page.model_path or not page.model_path.is_file():
         raise VisualRegressionError(f"代表页 {page.page_number} 缺少 PageModel，无法进行 CER 审校。")
-    return PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+    return load_representative_page_model(page)
 
 
 def prepare_cer_review_page(
@@ -596,7 +632,7 @@ def write_cer_review_pages(
     for page in manifest.pages:
         if not page.model_path or not page.model_path.is_file():
             raise VisualRegressionError(f"代表页 {page.page_number} 缺少 PageModel，无法生成页审校工具。")
-        model = PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+        model = load_representative_page_model(page)
         image = rendered.get(page.page_number)
         image_ref = image.relative_to(destination).as_posix() if image else None
         payload = _page_review_payload(
@@ -632,7 +668,7 @@ def run_representative_quality_gates(
             raise VisualRegressionError(f"代表页 {page.page_number} 缺少 PageModel。")
         if not page.visual_baseline_path or not page.visual_baseline_path.is_file():
             raise VisualRegressionError(f"代表页 {page.page_number} 缺少视觉基线。")
-        model = PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+        model = load_representative_page_model(page)
         with tempfile.TemporaryDirectory(prefix=f"pdf2word-representative-{page.page_number:04d}-") as temporary:
             work = Path(temporary)
             candidate = create_positioned_editable_docx([model], work / "candidate.docx")
@@ -674,7 +710,7 @@ def run_representative_word_regressions(
     for page in manifest.pages:
         if not page.model_path or not page.model_path.is_file() or not page.docx_path or not page.docx_path.is_file():
             raise VisualRegressionError(f"代表页 {page.page_number} 缺少 Word 实机验证工件。")
-        model = PageModel.from_dict(json.loads(page.model_path.read_text(encoding="utf-8")))
+        model = load_representative_page_model(page)
         output_pdf = destination / f"page-{page.page_number:04d}.pdf"
         page_count = verify_with_microsoft_word(page.docx_path, model, output_pdf)
         reports.append(RepresentativeWordReport(page.page_number, output_pdf, page_count))

@@ -13,6 +13,7 @@ from pdf2word_engine.representative import (
     RepresentativePage,
     cer_review_catalog,
     load_representative_manifest,
+    load_representative_page_model,
     prepare_cer_review_page,
     run_representative_regressions,
     run_representative_word_regressions,
@@ -26,6 +27,39 @@ from pdf2word_engine.regression import VisualRegressionError
 
 
 class RepresentativePageTests(unittest.TestCase):
+    def test_representative_model_resolves_bundled_relative_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            asset = root / "assets" / "chart.png"
+            asset.parent.mkdir()
+            asset.write_bytes(b"chart")
+            model_path = root / "page-model.json"
+            model_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "page_index": 0,
+                        "size": {"width_pt": 100, "height_pt": 100},
+                        "source_type": "outlined",
+                        "blocks": [
+                            {
+                                "block_id": "chart",
+                                "block_type": "image",
+                                "bbox": [0, 0, 10, 10],
+                                "z_index": 0,
+                                "reading_order": 0,
+                                "asset_path": "assets/chart.png",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            page = RepresentativePage(1, ("cover",), "relative asset", model_path=model_path)
+            model = load_representative_page_model(page)
+
+        self.assertEqual(model.blocks[0].asset_path, str(asset.resolve()))
+
     def test_checked_in_manifest_has_required_coverage_and_page10_golden(self) -> None:
         manifest = load_representative_manifest(Path(__file__).parent / "fixtures" / "representative_pages.json")
 

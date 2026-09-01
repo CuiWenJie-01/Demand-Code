@@ -103,7 +103,7 @@ class PositionedEditableWordTests(unittest.TestCase):
         self.assertIn('<w:b/><w:color w:val="EF168B"', document_xml)
         self.assertIn('<w:b w:val="0"/><w:color w:val="EF168B"', document_xml)
         self.assertIn('<w:sz w:val="16"/>', document_xml)
-        self.assertIn('<w:jc w:val="distribute"/>', document_xml)
+        self.assertIn('<w:jc w:val="left"/>', document_xml)
         self.assertIn("<w:t xml:space=\"preserve\">答案</w:t>", document_xml)
         self.assertIn("<w:t xml:space=\"preserve\">A</w:t>", document_xml)
 
@@ -141,3 +141,22 @@ class PositionedEditableWordTests(unittest.TestCase):
         self.assertIn("005", document_xml)
         self.assertIn("pdf2word_sidebar_rule_rule", document_xml)
         self.assertIn('fillcolor="#EF168B"', document_xml)
+
+    def test_short_answer_is_left_aligned_even_when_legacy_style_requests_distribution(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = PageModel(
+                schema_version=5,
+                page_index=0,
+                size=PageSize(595, 842),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1190,
+                source_image_height_px=1684,
+                blocks=[PageBlock("short", "text_line", (100, 100, 400, 130), 0, 0, text="答案C", style={"justify_to_bbox": True, "semantic_role": "callout_answer"})],
+            )
+            output = create_positioned_editable_docx([model], root / "short.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertIn('<w:jc w:val="left"/>', document_xml)
+        self.assertNotIn('<w:jc w:val="distribute"/>', document_xml)

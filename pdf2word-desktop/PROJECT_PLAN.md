@@ -1,5 +1,7 @@
 # PDF2Word Desktop 项目方案与开发基线
 
+> 当前复杂中文矢量轮廓 PDF 的代码实施必须同时遵守 [`docs/SOURCE_FIRST_EDITABLE_HYBRID_REBUILD.md`](docs/SOURCE_FIRST_EDITABLE_HYBRID_REBUILD.md)。该文档定义了源文档唯一真值、正文原生 Word 段落、区域级截图回退、可编辑覆盖率和第二轮代表页门禁；与旧缓存重建或整页回退策略冲突时，以该文档为准。
+
 > 文档版本：0.2  
 > 基线日期：2026-08-26  
 > 当前状态：M1（转换引擎 MVP）后段——版式收敛与回归基准建立；M0 技术路线已跑通，Microsoft Word 代表页实测已通过，代表页 CER 尚未正式收尾。

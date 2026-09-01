@@ -166,8 +166,19 @@ def assert_positioned_model_contract(docx_path: str | Path, model: PageModel, *,
             raise VisualRegressionError(f"定位文本框横向边界漂移：{block.block_id}")
         if abs(actual_top - expected_top) > tolerance_pt:
             raise VisualRegressionError(f"定位文本框基线漂移：{block.block_id}")
-        if role in {"question_heading", "question_body", "callout_body"} and not shape.has_distributed_alignment:
-            raise VisualRegressionError(f"右边界对齐规则未写入 DOCX：{block.block_id}")
+        # Distribution is now deliberately selective: short lines must remain
+        # left aligned to avoid the exaggerated character spacing that caused
+        # the original visible defects.  Only a near-full prose line may ask
+        # for the old right-edge expansion.
+        page_width = model.source_image_width_px or model.size.width_pt
+        should_distribute = (
+            bool(block.style.get("justify_to_bbox"))
+            and len("".join((block.text or "").split())) >= 18
+            and (block.bbox[2] - block.bbox[0]) >= page_width * 0.62
+            and role not in {"callout_label", "callout_answer", "answer_blank", "solution_short_body", "callout_body_fragment"}
+        )
+        if should_distribute != shape.has_distributed_alignment:
+            raise VisualRegressionError(f"文本框对齐策略未按质量规则写入 DOCX：{block.block_id}")
         if role == "callout_answer" and shape.text != (block.text or ""):
             raise VisualRegressionError("答案必须保持为独立、可编辑的文本框。")
         if role in {"callout_label", "callout_index", "answer_blank"} and shape.text != (block.text or ""):

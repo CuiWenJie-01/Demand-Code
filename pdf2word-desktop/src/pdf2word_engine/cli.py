@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Sequence
 
 from .errors import Pdf2WordError
+from .execution import resolve_ocr_execution_profile
 from .models import PageModel, PageSize, PdfKind
-from .ocr import create_paddle_pipeline, predict_page_model, write_page_model
-from .pipeline import convert_pdf
+from .ocr import FocusedOcrPipelineCache, create_paddle_pipeline, predict_page_model, write_page_model
+from .pipeline import convert_pdf, create_source_first_pilot, rebuild_cached_page_models
 from .preflight import inspect_pdf
 from .regression import verify_golden_page
 from .representative import (
@@ -39,6 +40,21 @@ def _build_parser() -> argparse.ArgumentParser:
     convert.add_argument("--dpi", type=int, default=200)
     convert.add_argument("--pages", dest="page_range")
     convert.add_argument("--resume-job", help="恢复同一输入与同一配置的未完成任务")
+    convert.add_argument("--ocr-device", choices=["auto", "cpu", "gpu"], default="auto", help="OCR 硬件：默认自动选择")
+    convert.add_argument("--cpu-threads", type=int, help="CPU OCR 线程数；默认按设备保守选择")
+
+    rebuild = commands.add_parser("rebuild-cached-job", help="不重跑全页 OCR，重建缓存作业的准确优先 Word")
+    rebuild.add_argument("--cached-job", type=Path, required=True, help="包含 pages/ 的已完成作业目录")
+    rebuild.add_argument("--source-pdf", type=Path, required=True)
+    rebuild.add_argument("--output-dir", type=Path, required=True)
+
+    source_pilot = commands.add_parser("source-first-pilot", help="从源 PDF 全新渲染并生成 1-10、21、23 页准确优先样本")
+    source_pilot.add_argument("source", type=Path)
+    source_pilot.add_argument("--output-dir", type=Path, required=True)
+    source_pilot.add_argument("--workspace-dir", type=Path, required=True, help="必须为空；拒绝读取旧 OCR/PageModel")
+    source_pilot.add_argument("--dpi", type=int, default=300)
+    source_pilot.add_argument("--ocr-device", choices=["auto", "cpu", "gpu"], default="auto")
+    source_pilot.add_argument("--cpu-threads", type=int)
 
     ocr_page = commands.add_parser("ocr-page", help="对单张渲染页进行 PP-StructureV3 识别并写出 PageModel JSON")
     ocr_page.add_argument("image", type=Path)
@@ -50,6 +66,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ocr_page.add_argument("--raw-output", type=Path, help="保存 Paddle 原始 JSON，仅用于适配器调试")
     ocr_page.add_argument("--native-word-output-dir", type=Path, help="保存 Paddle 原生 Word，仅用于 M0 对照")
     ocr_page.add_argument("--regions-dir", type=Path, help="保存图表、公式和图片等不可重建区域的 PNG 回退素材")
+    ocr_page.add_argument("--ocr-device", choices=["auto", "cpu", "gpu"], default="auto")
+    ocr_page.add_argument("--cpu-threads", type=int)
 
     render_models = commands.add_parser("render-page-model", help="把一个或多个 PageModel JSON 重建为可编辑 DOCX")
     render_models.add_argument("models", type=Path, nargs="+", help="PageModel JSON 文件")
@@ -117,11 +135,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"警告: {warning}")
             return 0
         if args.command == "ocr-page":
+            execution_profile = resolve_ocr_execution_profile(args.ocr_device, cpu_threads=args.cpu_threads)
             pipeline = create_paddle_pipeline(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_formula_recognition=False,
                 use_chart_recognition=False,
+                **execution_profile.paddle_options(),
             )
             model = predict_page_model(
                 pipeline,
@@ -132,6 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw_output_path=args.raw_output,
                 native_word_output_dir=args.native_word_output_dir,
                 region_directory=args.regions_dir,
+                focused_pipeline=FocusedOcrPipelineCache(**execution_profile.focused_paddle_options()),
             )
             output = write_page_model(model, args.output)
             print(json.dumps({"output": str(output), "blocks": len(model.blocks), "warnings": model.warnings}, ensure_ascii=False))
@@ -140,6 +161,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             models = [PageModel.from_dict(json.loads(path.read_text(encoding="utf-8"))) for path in args.models]
             output = create_positioned_editable_docx(models, args.output)
             print(json.dumps({"output": str(output), "pages": len(models)}, ensure_ascii=False))
+            return 0
+        if args.command == "rebuild-cached-job":
+            docx, quality_report, summary = rebuild_cached_page_models(
+                cached_job=args.cached_job,
+                output_dir=args.output_dir,
+                source_pdf=args.source_pdf,
+                progress=_progress,
+            )
+            print(json.dumps({"docx": str(docx), "quality_report": str(quality_report), "summary": str(summary)}, ensure_ascii=False))
+            return 0
+        if args.command == "source-first-pilot":
+            docx, quality_report, manifest = create_source_first_pilot(
+                args.source,
+                output_dir=args.output_dir,
+                workspace_dir=args.workspace_dir,
+                dpi=args.dpi,
+                ocr_device=args.ocr_device,
+                cpu_threads=args.cpu_threads,
+                progress=_progress,
+            )
+            print(json.dumps({"docx": str(docx), "quality_report": str(quality_report), "manifest": str(manifest)}, ensure_ascii=False))
             return 0
         if args.command == "visual-regression":
             model = PageModel.from_dict(json.loads(args.model.read_text(encoding="utf-8")))
@@ -251,6 +293,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             dpi=args.dpi,
             page_range=args.page_range,
             resume_job_id=args.resume_job,
+            ocr_device=args.ocr_device,
+            cpu_threads=args.cpu_threads,
             progress=_progress,
         )
         print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))

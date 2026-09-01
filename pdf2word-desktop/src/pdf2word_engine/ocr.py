@@ -19,6 +19,7 @@ from typing import Any, Mapping
 from PIL import Image
 
 from .errors import OcrRequiredError
+from .conflicts import force_full_page_fallback, resolve_page_model_conflicts
 from .layout_profiles import CN_EXAM_QUESTION_V1
 from .models import PAGE_MODEL_SCHEMA_VERSION, PageBlock, PageModel, PageSize, PdfKind
 
@@ -52,6 +53,19 @@ def create_paddle_pipeline(**options: Any) -> Any:
     from paddleocr import PPStructureV3  # type: ignore[import-not-found]
 
     return PPStructureV3(**options)
+
+
+class FocusedOcrPipelineCache:
+    """Lazily create the cropped-text OCR model once for one conversion job."""
+
+    def __init__(self, **options: Any) -> None:
+        self._options = options
+        self._pipeline: Any | None = None
+
+    def get(self) -> Any:
+        if self._pipeline is None:
+            self._pipeline = _focused_text_ocr_pipeline(**self._options)
+        return self._pipeline
 
 
 def page_model_from_paddle_result(
@@ -113,6 +127,7 @@ def page_model_from_paddle_result(
                 confidence=confidence,
                 text=str(text) if text is not None else None,
                 style={"ocr_engine": "PaddleOCR PP-StructureV3"},
+                source="PaddleOCR layout",
             )
         )
     if not blocks:
@@ -1468,7 +1483,7 @@ def _positive_int(value: Any) -> int | None:
     return result if result > 0 else None
 
 
-def _focused_text_ocr_pipeline() -> Any:
+def _focused_text_ocr_pipeline(**options: Any) -> Any:
     """Create the lightweight OCR pipeline used only for missed callout lines."""
 
     # A conversion must work with the locally installed model package. Avoid a
@@ -1481,13 +1496,22 @@ def _focused_text_ocr_pipeline() -> Any:
         use_doc_orientation_classify=False,
         use_doc_unwarping=False,
         use_textline_orientation=False,
+        **options,
     )
+
+
+def _resolve_focused_pipeline(value: FocusedOcrPipelineCache | Any | None) -> Any:
+    if isinstance(value, FocusedOcrPipelineCache):
+        return value.get()
+    return value if value is not None else _focused_text_ocr_pipeline()
 
 
 def recover_semantic_callout_lines(
     model: PageModel,
     image_path: str | Path,
     region_directory: str | Path,
+    *,
+    focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
 ) -> list[dict[str, Any]]:
     """OCR only text that the main layout pass skipped beside a ``谈`` tag.
 
@@ -1506,7 +1530,7 @@ def recover_semantic_callout_lines(
         return []
     destination = Path(region_directory)
     destination.mkdir(parents=True, exist_ok=True)
-    pipeline = _focused_text_ocr_pipeline()
+    pipeline = _resolve_focused_pipeline(focused_pipeline)
     recovered: list[dict[str, Any]] = []
     with Image.open(image_path) as source_image:
         image = source_image.convert("RGB")
@@ -1595,12 +1619,20 @@ def materialize_visual_fallbacks(
     model: PageModel,
     image_path: str | Path,
     region_directory: str | Path,
+    *,
+    focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
 ) -> PageModel:
     """Crop non-textual OCR regions for editable DOCX image fallback.
 
     Text remains a real Word textbox. Images, charts, formulas and other
     regions that cannot be safely reconstructed are retained as cropped PNGs.
     """
+
+    # The cover is a designed image, not ordinary prose.  Recreating its
+    # decorative lettering as black editable text is less accurate than a
+    # source screenshot, so it deliberately owns page 1 end-to-end.
+    if model.page_index == 0 and any(block.block_type.lower() in {"doc_title", "cover", "cover_title"} for block in model.blocks):
+        return force_full_page_fallback(model, image_path, region_directory, reason="cover page uses source-image fidelity fallback")
 
     fallback_types = {
         "image",
@@ -1626,7 +1658,7 @@ def materialize_visual_fallbacks(
         _restore_neutral_gray_watermark(model, image, destination)
         _restore_callout_ratings_from_source(model, image)
         _collapse_formula_fragments_to_image_fallback(model, page_width_px=width)
-        _recover_fragmented_text_tails(model, image, destination)
+        _recover_fragmented_text_tails(model, image, destination, focused_pipeline=focused_pipeline)
         _restore_fragmented_text_tails_as_images(model)
         _restore_option_figure_strip(model, page_width_px=width, page_height_px=height)
         for block in model.blocks:
@@ -1657,6 +1689,13 @@ def materialize_visual_fallbacks(
                 right = min(width, right + 2)
                 bottom = min(height, bottom + 2)
                 block.bbox = (block.bbox[0], block.bbox[1], float(right), float(bottom))
+            elif block.block_type.lower() == "formula":
+                # Fractions, superscripts and root bars are easy to crop by a
+                # pixel.  Retain a small all-round source margin and make the
+                # placed region match it exactly.
+                left, top = max(0, left - 5), max(0, top - 5)
+                right, bottom = min(width, right + 5), min(height, bottom + 5)
+                block.bbox = (float(left), float(top), float(right), float(bottom))
             left, right = max(0, left), min(width, right)
             top, bottom = max(0, top), min(height, bottom)
             if right <= left or bottom <= top:
@@ -1666,7 +1705,10 @@ def materialize_visual_fallbacks(
             asset = destination / f"{block.block_id}.png"
             image.crop((left, top, right, bottom)).save(asset, format="PNG")
             block.asset_path = str(asset)
-    return model
+            block.source = block.source or "source PDF crop"
+            block.fallback_mode = block.fallback_mode or "region_source_image"
+            block.selection_reason = block.selection_reason or "visual region cannot be reconstructed reliably"
+    return resolve_page_model_conflicts(model)
 
 
 def _restore_callout_ratings_from_source(model: PageModel, image: Image.Image) -> None:
@@ -1862,7 +1904,13 @@ def _restore_neutral_gray_watermark(model: PageModel, image: Image.Image, destin
     )
 
 
-def _recover_fragmented_text_tails(model: PageModel, image: Image.Image, destination: Path) -> None:
+def _recover_fragmented_text_tails(
+    model: PageModel,
+    image: Image.Image,
+    destination: Path,
+    *,
+    focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
+) -> None:
     """Retry only a fragmented suffix before falling back to its source image."""
 
     requests = [
@@ -1875,7 +1923,7 @@ def _recover_fragmented_text_tails(model: PageModel, image: Image.Image, destina
     ]
     if not requests:
         return
-    pipeline = _focused_text_ocr_pipeline()
+    pipeline = _resolve_focused_pipeline(focused_pipeline)
     destination.mkdir(parents=True, exist_ok=True)
     replacements: list[PageBlock] = []
     for block in requests:
@@ -2121,6 +2169,9 @@ def _collapse_formula_fragments_to_image_fallback(model: PageModel, *, page_widt
                 z_index=min(item.z_index for item in group),
                 reading_order=min(item.reading_order for item in group),
                 style={"source": "fragmented formula fallback"},
+                source="source PDF formula crop",
+                selection_reason="stacked/fragmented formula is not reliable editable text",
+                fallback_mode="formula_source_image",
             )
         )
     if removed:
@@ -2137,6 +2188,7 @@ def predict_page_model(
     raw_output_path: str | Path | None = None,
     native_word_output_dir: str | Path | None = None,
     region_directory: str | Path | None = None,
+    focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
 ) -> PageModel:
     """Run one rendered PDF page through Paddle and return the normalized model."""
 
@@ -2163,7 +2215,12 @@ def predict_page_model(
         source_type=source_type,
     )
     if region_directory is not None:
-        focused_lines = recover_semantic_callout_lines(model, image_path, region_directory)
+        focused_lines = recover_semantic_callout_lines(
+            model,
+            image_path,
+            region_directory,
+            focused_pipeline=focused_pipeline,
+        )
         if focused_lines:
             payload = raw.get("res") if isinstance(raw.get("res"), Mapping) else raw
             if isinstance(payload, dict):
@@ -2176,7 +2233,12 @@ def predict_page_model(
                     size=size,
                     source_type=source_type,
                 )
-        materialize_visual_fallbacks(model, image_path, region_directory)
+        materialize_visual_fallbacks(
+            model,
+            image_path,
+            region_directory,
+            focused_pipeline=focused_pipeline,
+        )
     if raw_output_path is not None:
         destination = Path(raw_output_path)
         destination.parent.mkdir(parents=True, exist_ok=True)
