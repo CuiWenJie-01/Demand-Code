@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import unicodedata
 from xml.sax.saxutils import escape
 
 from docx import Document
@@ -310,6 +311,26 @@ def _append_native_text_runs(paragraph: object, block: PageBlock) -> None:
             )
 
 
+def _estimated_native_line_width_pt(value: str, font_pt: float, spacing_twips: int) -> float:
+    units = 0.0
+    visible = 0
+    for character in value:
+        if character == "\t":
+            continue
+        visible += 1
+        if character.isspace():
+            units += 0.35
+        elif unicodedata.east_asian_width(character) in {"W", "F"}:
+            units += 1.0
+        elif character in "=+×÷%≈-—−":
+            units += 0.62
+        elif character.isupper() or character.isdigit():
+            units += 0.56
+        else:
+            units += 0.50
+    return units * font_pt + max(0, visible - 1) * spacing_twips / 20.0
+
+
 def _append_native_source_page(document: Document, model: PageModel, *, bookmark_base: int) -> None:
     """Place crops and editable paragraphs in source-coordinate page frames.
 
@@ -393,6 +414,20 @@ def _append_native_source_page(document: Document, model: PageModel, *, bookmark
         source_height = max(1.0, (block.bbox[3] - block.bbox[1]) * scale_y)
         frame_height = max(source_height + 2.0, line_count * max(10.5, line_spacing) + 2.0)
         frame_width = max(8.0, right - left)
+        if block.block_type != "editable_option_row":
+            try:
+                font_pt = float(block.style.get("font_size_pt", 9.6))
+            except (TypeError, ValueError):
+                font_pt = 9.6
+            try:
+                spacing_twips = int(block.style.get("character_spacing_twips", 0))
+            except (TypeError, ValueError):
+                spacing_twips = 0
+            required_width = max(
+                (_estimated_native_line_width_pt(line, font_pt, spacing_twips) for line in (block.text or "").splitlines()),
+                default=0.0,
+            )
+            frame_width = min(max(8.0, model.size.width_pt - left), max(frame_width, required_width + 1.5))
         ppr = paragraph._p.get_or_add_pPr()
         frame = parse_xml(
             '<w:framePr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '

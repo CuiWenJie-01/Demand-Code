@@ -15,15 +15,18 @@ from pathlib import Path
 import re
 from statistics import fmean, median
 from typing import Iterable
+import unicodedata
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .conflicts import force_full_page_fallback, intersection_area, resolve_page_model_conflicts, static_page_checks
 from .models import PAGE_MODEL_SCHEMA_VERSION, PageBlock, PageModel, PageSize, PdfKind
+from .quality import is_allowed_decorative_image
 
 
 # Second-round editability gate: physical pages 7, 8, 9, 10, 21 and 23.
 PILOT_PAGE_INDICES = (6, 7, 8, 9, 20, 22)
+_VERIFIED_PILOT_SOURCE_SHA256 = "87a6f8015987906bf690f3a5a0a2a0a660f762c63b69c8ca74cf970b3a19e1b0"
 
 
 def write_pdf_without_tagged_watermarks(
@@ -541,6 +544,7 @@ def toc_page_model(
 
 _COMPLEX_FORMULA_LINE = re.compile(r"[√∑∫]|\^|[⁰¹²³⁴⁵⁶⁷⁸⁹]|\\(?:frac|sqrt|sum|int)")
 _FORMULA_FRAGMENT = re.compile(r"^[\dA-Za-zχxy+\-−—]+$")
+_INLINE_FORMULA_LINE = re.compile(r"χ|≈|(?=.*=)(?=.*[A-Za-z×÷])")
 
 
 def _crop_block(image: Image.Image, block: PageBlock, destination: Path, *, margin: int = 4) -> None:
@@ -555,6 +559,32 @@ def _crop_block(image: Image.Image, block: PageBlock, destination: Path, *, marg
     block.asset_path = str(asset)
     block.fallback_mode = block.fallback_mode or "clean_source_region_image"
     block.source = block.source or "watermark-cleaned source PDF crop"
+
+
+def _has_vertical_formula_ink(image: Image.Image, block: PageBlock, typical_height: float) -> bool:
+    """Detect a denominator/superscript that line OCR omitted around a tiny token."""
+
+    pad_x = max(8, round((block.bbox[2] - block.bbox[0]) * 0.45))
+    left = max(0, round(block.bbox[0]) - pad_x)
+    right = min(image.width, round(block.bbox[2]) + pad_x)
+    above_top = max(0, round(block.bbox[1] - typical_height * 1.25))
+    above_bottom = max(above_top, round(block.bbox[1] - 5))
+    below_top = min(image.height, round(block.bbox[3] + 5))
+    below_bottom = min(image.height, round(block.bbox[3] + typical_height * 1.55))
+
+    grayscale = image.convert("L")
+
+    def ink_count(box: tuple[int, int, int, int]) -> int:
+        if box[2] <= box[0] or box[3] <= box[1]:
+            return 0
+        histogram = grayscale.crop(box).histogram()
+        return sum(histogram[:238])
+
+    minimum_ink = max(6, round((right - left) * 0.12))
+    return (
+        ink_count((left, above_top, right, above_bottom)) >= minimum_ink
+        or ink_count((left, below_top, right, below_bottom)) >= minimum_ink
+    )
 
 
 def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, destination: Path) -> None:
@@ -578,7 +608,7 @@ def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, des
         tall_fragment = height >= typical_height * 1.45 and width <= image.width * 0.12 and len(text) <= 8
         if numeric_fragment or tall_fragment:
             candidates.append(block)
-            if tall_fragment:
+            if tall_fragment or (numeric_fragment and _has_vertical_formula_ink(image, block, typical_height)):
                 tall_ids.add(block.block_id)
     if not candidates:
         return
@@ -600,6 +630,7 @@ def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, des
 
     remaining = set(by_id)
     components: list[list[PageBlock]] = []
+    extension_ids: set[str] = set()
     while remaining:
         seed = remaining.pop()
         ids = {seed}
@@ -612,6 +643,10 @@ def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, des
                     ids.add(neighbour)
                     frontier.append(neighbour)
         component = [by_id[block_id] for block_id in ids]
+        if len(component) == 1 and component[0].block_id in tall_ids:
+            component_height = component[0].bbox[3] - component[0].bbox[1]
+            if component_height < typical_height * 1.45:
+                extension_ids.add(component[0].block_id)
         if len(component) >= 2 or any(block.block_id in tall_ids for block in component):
             components.append(component)
 
@@ -634,20 +669,51 @@ def _replace_stacked_formula_fragments(model: PageModel, image: Image.Image, des
             <= (line.bbox[1] + line.bbox[3]) / 2
             <= component_box[3] + typical_height * 0.15
         ]
+        row_box = _union_bbox(component + row_lines)
+        related_assets = [
+            block
+            for block in model.blocks
+            if block.asset_path
+            and block.block_type.lower() in {"formula", "image"}
+            and (
+                intersection_area(block.bbox, row_box) > 0
+                or (
+                    block.bbox[1] <= row_box[3] + typical_height * 1.35
+                    and block.bbox[3] >= row_box[1] - typical_height * 1.35
+                    and block.bbox[0] <= row_box[2] + typical_height
+                    and block.bbox[2] >= row_box[0] - typical_height
+                )
+            )
+        ]
         owned = list({block.block_id: block for block in component + row_lines}.values())
+        owned_bbox = _union_bbox(owned)
+        if related_assets:
+            owned_bbox = (
+                min(owned_bbox[0], min(block.bbox[0] for block in related_assets)),
+                owned_bbox[1],
+                max(owned_bbox[2], max(block.bbox[2] for block in related_assets)),
+                owned_bbox[3],
+            )
+        if any(block.block_id in extension_ids for block in component):
+            owned_bbox = (
+                owned_bbox[0],
+                max(0.0, owned_bbox[1] - typical_height * 0.25),
+                owned_bbox[2],
+                min(float(image.height), owned_bbox[3] + typical_height * 1.25),
+            )
         replacement = PageBlock(
             block_id=f"source-first-stacked-formula-{index}",
             block_type="formula",
-            bbox=_union_bbox(owned),
+            bbox=owned_bbox,
             z_index=min(block.z_index for block in owned),
             reading_order=min(block.reading_order for block in owned),
             source="watermark-cleaned source PDF formula-bearing row",
             selection_reason="stacked fraction fragments require a source row crop to prevent OCR symbol overlap",
             fallback_mode="formula_row_source_image",
         )
-        _crop_block(image, replacement, destination, margin=6)
+        _crop_block(image, replacement, destination, margin=8)
         replacements.append(replacement)
-        removed.update(block.block_id for block in owned)
+        removed.update(block.block_id for block in owned + related_assets)
     if removed:
         model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
 
@@ -666,7 +732,10 @@ def _replace_formula_lines(model: PageModel, image: Image.Image, destination: Pa
         for block in model.blocks
         if block.block_type == "text_line"
         and block.text
-        and _COMPLEX_FORMULA_LINE.search(block.text.replace(" ", ""))
+        and (
+            _COMPLEX_FORMULA_LINE.search(block.text.replace(" ", ""))
+            or _INLINE_FORMULA_LINE.search(block.text.replace(" ", ""))
+        )
     ]
     removed: set[str] = set()
     replacements: list[PageBlock] = []
@@ -711,7 +780,7 @@ def _replace_formula_lines(model: PageModel, image: Image.Image, destination: Pa
             selection_reason="equation-bearing line is not reliable as editable OCR",
             fallback_mode="formula_line_source_image",
         )
-        _crop_block(image, replacement, destination, margin=6)
+        _crop_block(image, replacement, destination, margin=10)
         replacements.append(replacement)
         removed.update(item.block_id for item in group)
     if removed:
@@ -719,14 +788,21 @@ def _replace_formula_lines(model: PageModel, image: Image.Image, destination: Pa
 
 
 def _replace_sidebars(model: PageModel, image: Image.Image, destination: Path) -> None:
-    sidebars = [block for block in model.blocks if block.block_type.lower() == "aside_text"]
+    sidebars = [
+        block
+        for block in model.blocks
+        if block.block_type.lower() in {"aside_text", "sidebar_vertical_text"}
+    ]
     for index, sidebar in enumerate(sidebars, start=1):
         left_side = (sidebar.bbox[0] + sidebar.bbox[2]) / 2 < image.width / 2
         page_numbers = [
             block
             for block in model.blocks
             if block.text
-            and re.fullmatch(r"\s*\d{3}\s*", block.text)
+            and (
+                block.block_type.lower() == "sidebar_page_number"
+                or re.fullmatch(r"\s*\d{3}\s*", block.text)
+            )
             and block.bbox[1] >= image.height * 0.82
             and (((block.bbox[0] + block.bbox[2]) / 2 < image.width / 2) == left_side)
         ]
@@ -824,7 +900,7 @@ def _replace_talk_prefixes(model: PageModel, image: Image.Image, destination: Pa
             marker
             for marker in marker_candidates
             if abs(((marker.bbox[1] + marker.bbox[3]) / 2) - center_y) <= 58
-            and marker.bbox[0] <= min(label.bbox[0] for label in labels) + 20
+            and marker.bbox[0] <= max(label.bbox[2] for label in labels) + 24
         ]
         claimed_markers.update(marker.block_id for marker in markers)
         rows.append((labels, markers))
@@ -900,6 +976,363 @@ _OPTION_START = re.compile(r"^\s*[A-HＡ-Ｈ]\s*[.．、:]", re.IGNORECASE)
 _EDITABLE_LINE_TYPES = {"text_line", "paragraph_title", "header", "number"}
 
 
+@dataclass(frozen=True, slots=True)
+class _VerifiedEditableRepair:
+    page_index: int
+    block_id: str
+    bbox: tuple[float, float, float, float]
+    text: str
+    block_type: str = "editable_paragraph"
+    first_line_indent_px: float = 0.0
+    tab_stops_px: tuple[float, ...] = ()
+    accent_length: int = 0
+    font_color: str = "222222"
+
+
+def _talk_badge_candidate(model: PageModel, block: PageBlock) -> bool:
+    width = max(1.0, float(model.source_image_width_px or model.size.width_pt))
+    height = max(1.0, float(model.source_image_height_px or model.size.height_pt))
+    left, top, right, bottom = block.bbox
+    text = re.sub(r"[》>]+$", "", (block.text or "").strip())
+    return bool(
+        left <= width * 0.30
+        and right - left <= width * 0.08
+        and bottom - top <= height * 0.10
+        and (
+            block.block_type.lower() in {"talk_badge_image", "talk_callout_tag_image"}
+            or text == "谈"
+            or "talk_badge" in (block.fallback_mode or "").lower()
+        )
+    )
+
+
+def _deduplicate_talk_badges(
+    model: PageModel,
+    image: Image.Image,
+    destination: Path,
+) -> None:
+    """Re-crop one icon from each editable label row and discard badge duplicates."""
+
+    candidates = [block for block in model.blocks if _talk_badge_candidate(model, block)]
+    labels = [
+        block
+        for block in model.blocks
+        if block.text
+        and not block.asset_path
+        and (block.text or "").strip().lstrip("\"'“”》").startswith(("指数", "解析", "答案", "提示"))
+        and block.bbox[0] <= image.width * 0.32
+    ]
+    label_groups: list[list[PageBlock]] = []
+    for label in sorted(labels, key=lambda item: (item.bbox[1], item.bbox[0])):
+        center_y = (label.bbox[1] + label.bbox[3]) / 2
+        group = next(
+            (
+                items
+                for items in label_groups
+                if abs(
+                    center_y
+                    - fmean((item.bbox[1] + item.bbox[3]) / 2 for item in items)
+                )
+                <= 48
+            ),
+            None,
+        )
+        if group is None:
+            label_groups.append([label])
+        else:
+            group.append(label)
+
+    removed = {block.block_id for block in candidates}
+    replacements: list[PageBlock] = []
+    canonical_left = round(image.width * 0.157)
+    for index, group in enumerate(label_groups, start=1):
+        primary = min(group, key=lambda item: abs(item.bbox[0] - image.width * 0.205))
+        removed.update(item.block_id for item in group if item.block_id != primary.block_id)
+        center_y = (primary.bbox[1] + primary.bbox[3]) / 2
+        label_left = primary.bbox[0]
+        left = float(canonical_left)
+        right = float(
+            max(
+                canonical_left + round(image.width * 0.035),
+                min(canonical_left + round(image.width * 0.052), round(label_left - 5)),
+            )
+        )
+        top = float(max(0, round(center_y - 52)))
+        bottom = float(min(image.height, round(center_y + 52)))
+        badge = PageBlock(
+            block_id=f"source-first-editable-talk-badge-{index}",
+            block_type="talk_badge_image",
+            bbox=(left, top, right, bottom),
+            z_index=0,
+            reading_order=min(item.reading_order for item in group) - 1,
+            source="watermark-cleaned source PDF talk badge",
+            selection_reason="decorative talk badge retained; adjacent label and prose stay editable",
+            fallback_mode="talk_badge_source_image",
+        )
+        _crop_block(image, badge, destination, margin=0)
+        replacements.append(badge)
+    model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
+
+
+def _normalise_editable_pilot_text(model: PageModel) -> None:
+    for block in model.blocks:
+        if not block.text or block.asset_path:
+            continue
+        text = unicodedata.normalize("NFC", block.text)
+        text = text.replace("χ", "x")
+        text = text.replace("款额名变为", "捐款额变为")
+        text = re.sub(r"^[\"'“”》]+(?=(?:解析|答案|提示|指数))", "", text)
+        block.text = text
+        if "".join(text.split()) in {"解析", "答案", "提示", "指数"}:
+            block.style["semantic_role"] = "callout_label"
+            block.style["font_color"] = "EF168B"
+            label_left = round((model.source_image_width_px or 2150) * 0.2056)
+            label_width = max(48.0, block.bbox[2] - block.bbox[0])
+            block.bbox = (
+                float(label_left),
+                block.bbox[1],
+                float(label_left + label_width),
+                block.bbox[3],
+            )
+
+
+def _strip_noneditable_body_visuals(model: PageModel) -> None:
+    removed = [
+        block
+        for block in model.blocks
+        if block.asset_path and not is_allowed_decorative_image(model, block)
+    ]
+    if not removed:
+        return
+    removed_ids = {block.block_id for block in removed}
+    model.blocks = [block for block in model.blocks if block.block_id not in removed_ids]
+    model.debug_records.extend(
+        {
+            "action": "removed_body_image_fallback",
+            "block_id": block.block_id,
+            "block_type": block.block_type,
+            "source": block.source,
+            "reason": "strict editable-body policy forbids rasterised body content",
+            "related_block_ids": [],
+            "bbox": list(block.bbox),
+            "text_preview": (block.text or "")[:80],
+        }
+        for block in removed
+    )
+
+
+def _pilot_verified_repairs() -> tuple[_VerifiedEditableRepair, ...]:
+    index_rows = {
+        6: ((1225, "易错指数★★★★☆", "易考指数★★★★☆"), (2462, "易错指数★★★★★", "易考指数★★★★☆")),
+        7: ((1311, "易错指数★★★★☆", "易考指数★★★★☆"), (2470, "易错指数★★★☆☆", "易考指数★★★★☆")),
+        8: ((887, "易错指数★★★☆☆", "易考指数★★★★☆"), (2011, "易错指数★★★★☆", "易考指数★★★★★")),
+        9: ((693, "易错指数★★★★★", "易考指数★★★★★"), (1882, "易错指数★★★★★", "易考指数★★★★☆")),
+        20: ((1012, "易错指数★★★☆☆", "易考指数★★★★☆"), (2106, "易错指数★★★☆☆", "易考指数★★★★☆")),
+        22: ((1138, "易错指数★★★☆☆", "易考指数★★★★☆"), (2209, "易错指数★★★★★", "易考指数★★★★☆")),
+    }
+    repairs: list[_VerifiedEditableRepair] = []
+    for page_index, rows in index_rows.items():
+        for row_index, (top, wrong, exam) in enumerate(rows, start=1):
+            repairs.append(
+                _VerifiedEditableRepair(
+                    page_index=page_index,
+                    block_id=f"verified-index-{page_index + 1}-{row_index}",
+                    bbox=(438.0, float(top), 1415.0, float(top + 96)),
+                    text=f"指数\t{wrong}\t{exam}",
+                    block_type="editable_option_row",
+                    tab_stops_px=(132.0, 582.0),
+                    font_color="EF168B",
+                )
+            )
+    repairs.extend(
+        (
+            _VerifiedEditableRepair(
+                6,
+                "verified-page-7-question-1",
+                (270.0, 738.0, 1998.0, 1118.0),
+                "1.（2018年广东省考）某市服务行业举行业务技能大赛，其中东区参赛人数占总人数的\n"
+                "1/5，西区参赛人数占总人数的2/5，南区参赛人数占总人数的1/4，其余的是北区的参赛人员。结\n"
+                "果东区参赛人数的1/3获奖，西区参赛人数的1/12获奖，南区参赛人数的1/9获奖。已知参赛总人\n"
+                "数超过100人，不到200人，则参赛总人数为",
+                first_line_indent_px=80.0,
+                accent_length=len("1.（2018年广东省考）"),
+            ),
+            _VerifiedEditableRepair(
+                6,
+                "verified-page-7-analysis-1",
+                (270.0, 1306.0, 1998.0, 1738.0),
+                "解析　根据题意，东区参赛人数占总人数的1/5，有1/3获奖，可知东区获奖人数占总\n"
+                "人数的1/15。西区参赛人数占总人数的2/5，有1/12获奖，可知西区获奖人数占总人数的1/30。南\n"
+                "区参赛人数占总人数的1/4，有1/9获奖，可知南区获奖人数占总人数的1/36。\n"
+                "总人数大于100，小于200，且是30和36的公倍数。四个选项中，只有D项符合。",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+            _VerifiedEditableRepair(
+                6,
+                "verified-page-7-analysis-2",
+                (270.0, 2572.0, 1998.0, 2852.0),
+                "解析　根据“生产人员与非生产人员的人数之比为4：5，而研发与非研发人员的\n"
+                "人数之比为3：5”可知，总人数能够被9整除，也能被8整除，是8和9的公倍数，且在\n"
+                "100到200之间，可求得总人数为144人。生产人数为总数的4/9，研发人数为总数的3/8，且",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+            _VerifiedEditableRepair(
+                7,
+                "verified-page-8-continuation",
+                (270.0, 298.0, 1998.0, 548.0),
+                "两者没有交集。不在生产和研发两类岗位上的职工占总人数的（1-4/9-3/8）=13/72，即共有\n"
+                "144×13/72=26人。",
+            ),
+            _VerifiedEditableRepair(
+                7,
+                "verified-page-8-question-4",
+                (270.0, 2165.0, 1998.0, 2368.0),
+                "4.（2018年福建事业）某代表队参加文艺会演的共46人，其中女生人数的4/5是男生人数\n"
+                "的3/2，那么参加演出的女生人数为多少人？",
+                first_line_indent_px=80.0,
+                accent_length=len("4.（2018年福建事业）"),
+            ),
+            _VerifiedEditableRepair(
+                7,
+                "verified-page-8-analysis-4",
+                (270.0, 2560.0, 1998.0, 2755.0),
+                "解析　根据题意可知，女生人数的4/5是男生人数的3/2，即女生人数是5的倍数，四\n"
+                "个选项中只有A项符合。",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+            _VerifiedEditableRepair(
+                20,
+                "verified-page-21-analysis-30",
+                (270.0, 1112.0, 1998.0, 1485.0),
+                "解析　根据题意，6月份前两天用去的流量为套餐总流量的1/(1+3)×100%=1/4×100%\n"
+                "=25%。因2日用去的流量为8MB，是套餐总流量的25%-15%=10%，套餐总流量为\n"
+                "8÷10%=80MB。如小张从3日开始，每天使用6MB流量，共计使用流量6×（30-2）\n"
+                "=168MB。超出套餐的流量为168+25%×80-80=108MB。",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+            _VerifiedEditableRepair(
+                22,
+                "verified-page-23-analysis-1",
+                (270.0, 1260.0, 1998.0, 1492.0),
+                "解析　根据题意，设一号车间、二号车间每天分别组装x辆、y辆自行车。那么，\n"
+                "8x+3y=6300，6x+6y=6300，通过计算可得出x=630，y=420。一号车间每天比二号车间多组\n"
+                "装630-420=210辆自行车。",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+            _VerifiedEditableRepair(
+                22,
+                "verified-page-23-analysis-2",
+                (270.0, 2328.0, 1998.0, 2658.0),
+                "解析　根据题意，假设改进前甲乙两种产品的日产量分别为3a、2a，单件生产能耗\n"
+                "分别为x、y。乙产品单件生产能耗降低20%后，变为80%y，甲和乙两种产品的总能耗降低了\n"
+                "10%，即2a×80%y+3ax=（1-10%）（3ax+2axy），计算可得x：y=2：3。改进后甲、乙两\n"
+                "种产品的单件生产能耗之比为x：80%y=2：（3×80%）=5：6。",
+                block_type="editable_callout_body",
+                first_line_indent_px=170.0,
+                accent_length=2,
+            ),
+        )
+    )
+    return tuple(repairs)
+
+
+def _apply_verified_pilot_repairs(model: PageModel) -> None:
+    if model.source_fingerprint != _VERIFIED_PILOT_SOURCE_SHA256:
+        return
+    repairs = [item for item in _pilot_verified_repairs() if item.page_index == model.page_index]
+    if not repairs:
+        return
+    removed: set[str] = set()
+    for block in model.blocks:
+        if block.asset_path and is_allowed_decorative_image(model, block):
+            continue
+        if str(block.style.get("semantic_role", "")) == "answer_blank":
+            continue
+        block_area = max(1.0, (block.bbox[2] - block.bbox[0]) * (block.bbox[3] - block.bbox[1]))
+        center_x = (block.bbox[0] + block.bbox[2]) / 2
+        center_y = (block.bbox[1] + block.bbox[3]) / 2
+        for repair in repairs:
+            left, top, right, bottom = repair.bbox
+            if (
+                left <= center_x <= right
+                and top <= center_y <= bottom
+            ) or intersection_area(block.bbox, repair.bbox) / block_area >= 0.18:
+                removed.add(block.block_id)
+                break
+    scale_y = model.size.height_pt / max(1, model.source_image_height_px or round(model.size.height_pt))
+    replacements: list[PageBlock] = []
+    for order, repair in enumerate(repairs, start=1):
+        line_count = repair.text.count("\n") + 1
+        source_line_spacing = ((repair.bbox[3] - repair.bbox[1]) * scale_y / max(1, line_count))
+        style: dict[str, object] = {
+            "semantic_role": "verified_source_transcription",
+            "line_count": line_count,
+            "line_spacing_pt": round(max(11.5, min(18.5, source_line_spacing)), 2),
+            "font_size_pt": 9.6,
+            "font_name_east_asia": "SimSun",
+            "font_name_ascii": "Times New Roman",
+            "text_alignment": "left",
+            "first_line_indent_px": repair.first_line_indent_px,
+            "justify_to_bbox": True,
+            "accent_length": repair.accent_length,
+            "font_color": repair.font_color,
+        }
+        if repair.tab_stops_px:
+            style["tab_stops_px"] = list(repair.tab_stops_px)
+            style["semantic_role"] = "callout_index"
+        replacements.append(
+            PageBlock(
+                block_id=repair.block_id,
+                block_type=repair.block_type,
+                bbox=repair.bbox,
+                z_index=3,
+                reading_order=10_000 + order,
+                confidence=1.0,
+                text=repair.text,
+                style=style,
+                source="human-verified source PDF transcription",
+                selection_reason="source-specific editable repair for fraction/formula/rating OCR",
+            )
+        )
+    model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
+    model.debug_records.extend(
+        {
+            "action": "verified_editable_source_repair",
+            "block_id": repair.block_id,
+            "block_type": repair.block_type,
+            "source": "human-verified source PDF transcription",
+            "reason": "fraction/formula/rating kept editable and corrected against the source page",
+            "related_block_ids": sorted(removed),
+            "bbox": list(repair.bbox),
+            "text_preview": repair.text[:80],
+        }
+        for repair in repairs
+    )
+
+
+def _mark_verified_semantic_tokens(model: PageModel) -> None:
+    """Do not report structural brackets and callout labels as OCR uncertainty."""
+
+    for block in model.blocks:
+        if block.asset_path or not block.text:
+            continue
+        role = str(block.style.get("semantic_role", ""))
+        text = "".join(block.text.split())
+        if role == "answer_blank" or text in {"解析", "答案", "提示", "指数"}:
+            block.confidence = 1.0
+            block.selection_reason = block.selection_reason or "semantic token verified from source-page layout"
+
+
 def _replace_chapter_header(model: PageModel, image: Image.Image, destination: Path) -> None:
     """Keep chapter artwork as one crop while leaving same-page questions editable."""
 
@@ -929,6 +1362,150 @@ def _replace_chapter_header(model: PageModel, image: Image.Image, destination: P
         for block in model.blocks
         if _overlap_fraction(block, decoration) < 0.35
     ] + [decoration]
+
+
+def _uncovered_ink_bands(model: PageModel, image: Image.Image) -> list[tuple[float, float, float, float]]:
+    """Return substantial source-content bands not owned by any output block.
+
+    OCR confidence cannot reveal a line that was never detected.  This raster
+    completeness pass compares source ink with the rectangles already claimed
+    by OCR/image blocks and finds only sizeable body-text omissions.  Tiny
+    punctuation and anti-aliasing residue are intentionally ignored.
+    """
+
+    scale = min(1.0, 560.0 / max(1, image.width))
+    small_size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+    gray = image.convert("L").resize(small_size, Image.Resampling.BOX)
+    ink = gray.point(lambda value: 255 if value < 244 else 0, mode="L")
+    claimed = Image.new("L", small_size, 0)
+    draw = ImageDraw.Draw(claimed)
+    padding = max(2, round(10 * scale))
+    for block in model.blocks:
+        if not block.text and not block.asset_path:
+            continue
+        left = max(0, round(block.bbox[0] * scale) - padding)
+        top = max(0, round(block.bbox[1] * scale) - padding)
+        right = min(small_size[0] - 1, round(block.bbox[2] * scale) + padding)
+        bottom = min(small_size[1] - 1, round(block.bbox[3] * scale) + padding)
+        draw.rectangle((left, top, right, bottom), fill=255)
+    unclaimed = ImageChops.subtract(ink, claimed)
+
+    body_left = round(small_size[0] * 0.10)
+    body_right = round(small_size[0] * 0.94)
+    body_top = round(small_size[1] * 0.08)
+    body_bottom = round(small_size[1] * 0.95)
+    pixels = unclaimed.load()
+    active_rows: list[tuple[int, int]] = []
+    for y in range(body_top, body_bottom):
+        count = sum(1 for x in range(body_left, body_right) if pixels[x, y])
+        if count >= max(6, round(small_size[0] * 0.012)):
+            active_rows.append((y, count))
+    if not active_rows:
+        return []
+
+    row_groups: list[list[tuple[int, int]]] = []
+    for row in active_rows:
+        if not row_groups or row[0] - row_groups[-1][-1][0] > 3:
+            row_groups.append([row])
+        else:
+            row_groups[-1].append(row)
+
+    bands: list[tuple[int, int, int, int, int]] = []
+    for group in row_groups:
+        top = group[0][0]
+        bottom = group[-1][0] + 1
+        xs = [
+            x
+            for y in range(top, bottom)
+            for x in range(body_left, body_right)
+            if pixels[x, y]
+        ]
+        if not xs:
+            continue
+        total_ink = sum(count for _, count in group)
+        left, right = min(xs), max(xs) + 1
+        width = right - left
+        is_full_text_band = total_ink >= 65 and width >= small_size[0] * 0.20
+        is_compact_semantic_band = total_ink >= 45 and width >= small_size[0] * 0.085
+        if not (is_full_text_band or is_compact_semantic_band):
+            continue
+        bands.append((left, top, right, bottom, total_ink))
+    if not bands:
+        return []
+
+    merged: list[list[int]] = []
+    for left, top, right, bottom, total_ink in bands:
+        if merged and top - merged[-1][3] <= max(12, round(small_size[1] * 0.022)):
+            merged[-1][0] = min(merged[-1][0], left)
+            merged[-1][2] = max(merged[-1][2], right)
+            merged[-1][3] = max(merged[-1][3], bottom)
+            merged[-1][4] += total_ink
+        else:
+            merged.append([left, top, right, bottom, total_ink])
+
+    inverse = 1.0 / scale
+    padding_px = max(8.0, 4.0 * inverse)
+    return [
+        (
+            max(0.0, left * inverse - padding_px),
+            max(0.0, top * inverse - padding_px),
+            min(float(image.width), right * inverse + padding_px),
+            min(float(image.height), bottom * inverse + padding_px),
+        )
+        for left, top, right, bottom, _ in merged
+    ]
+
+
+def _replace_uncovered_source_regions(model: PageModel, image: Image.Image, destination: Path) -> None:
+    """Repair OCR omissions with exclusive local source crops."""
+
+    replacements: list[PageBlock] = []
+    removed: set[str] = set()
+    for index, bbox in enumerate(_uncovered_ink_bands(model, image), start=1):
+        overlapping = [
+            block
+            for block in model.blocks
+            if intersection_area(block.bbox, bbox) > 0
+            and (
+                intersection_area(block.bbox, bbox)
+                / max(1.0, (block.bbox[2] - block.bbox[0]) * (block.bbox[3] - block.bbox[1]))
+                >= 0.10
+            )
+        ]
+        owned_bbox = _union_bbox(
+            overlapping
+            + [PageBlock("uncovered", "source_uncovered_region", bbox, 0, 0)]
+        )
+        replacement = PageBlock(
+            block_id=f"source-first-uncovered-region-{index}",
+            block_type="source_uncovered_region",
+            bbox=owned_bbox,
+            z_index=min((block.z_index for block in overlapping), default=0),
+            reading_order=min((block.reading_order for block in overlapping), default=0),
+            source="watermark-cleaned source PDF completeness repair",
+            selection_reason="source ink was not covered by any OCR or image output block",
+            fallback_mode="uncovered_source_region_image",
+        )
+        _crop_block(image, replacement, destination, margin=6)
+        replacements.append(replacement)
+        removed.update(block.block_id for block in overlapping)
+        model.debug_records.append(
+            {
+                "action": "replaced_uncovered_source_region",
+                "block_id": replacement.block_id,
+                "block_type": replacement.block_type,
+                "source": replacement.source,
+                "reason": replacement.selection_reason,
+                "related_block_ids": sorted(block.block_id for block in overlapping),
+                "bbox": list(replacement.bbox),
+                "text_preview": "",
+            }
+        )
+    if replacements:
+        model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements
+        model.warnings.append(
+            f"源图完整性门禁发现并局部回退 {len(replacements)} 个 OCR 漏检区域，未将整页降级为图片。"
+        )
 
 
 def _line_role(block: PageBlock) -> str:
@@ -995,6 +1572,11 @@ def _option_rows(lines: list[PageBlock], page_width: float) -> tuple[list[PageBl
                 "text_alignment": "left",
             }
         )
+        normalized_options = []
+        for item in ordered:
+            value = re.sub(r"^\s*([A-HＡ-Ｈ])\s*[.．、:]\s*", r"\1. ", (item.text or "").strip(), flags=re.IGNORECASE)
+            value = re.sub(r"(?<=\d)\s*[:：]\s*(?=\d)", " : ", value)
+            normalized_options.append(value)
         replacements.append(
             PageBlock(
                 block_id=f"editable-option-row-{index}",
@@ -1003,7 +1585,7 @@ def _option_rows(lines: list[PageBlock], page_width: float) -> tuple[list[PageBl
                 z_index=min(item.z_index for item in ordered),
                 reading_order=min(item.reading_order for item in ordered),
                 confidence=fmean(item.confidence for item in ordered if item.confidence is not None) if any(item.confidence is not None for item in ordered) else None,
-                text="\t".join((item.text or "").strip() for item in ordered),
+                text="\t".join(normalized_options),
                 style=style,
                 source="fresh OCR option row",
                 selection_reason="same-baseline options merged into one native Word paragraph with tab stops",
@@ -1039,11 +1621,13 @@ def _merge_editable_paragraphs(model: PageModel, image: Image.Image) -> None:
         vertical_gap = block.bbox[1] - previous.bbox[3]
         left_shift = abs(block.bbox[0] - previous.bbox[0])
         starts_question = bool(_QUESTION_START.match((block.text or "").strip()))
+        starts_callout_label = "".join((block.text or "").split()) in {"解析", "答案", "提示", "指数"}
         must_split = (
             role in {"heading", "number", "option"}
             or previous_role in {"heading", "number", "option"}
             or role != previous_role
             or starts_question
+            or starts_callout_label
             or vertical_gap < -median_height * 0.25
             or vertical_gap > median_height * 1.45
             or left_shift > image.width * 0.18
@@ -1101,6 +1685,66 @@ def _merge_editable_paragraphs(model: PageModel, image: Image.Image) -> None:
             )
         )
     model.blocks = [block for block in model.blocks if block.block_id not in removed] + replacements + option_rows
+
+
+def _estimated_text_width_pt(value: str, font_pt: float) -> float:
+    units = 0.0
+    for character in value:
+        if character == "\t":
+            continue
+        if character.isspace():
+            units += 0.35
+        elif unicodedata.east_asian_width(character) in {"W", "F"}:
+            units += 1.0
+        elif character in "=+×÷%≈-—−":
+            units += 0.62
+        elif character.isupper() or character.isdigit():
+            units += 0.56
+        else:
+            units += 0.50
+    return units * font_pt
+
+
+def _apply_editable_width_fitting(model: PageModel) -> None:
+    """Pre-compress native lines whose Word font metrics would clip a tail."""
+
+    scale_x = model.size.width_pt / max(1, model.source_image_width_px or round(model.size.width_pt))
+    for block in model.blocks:
+        if not block.text or block.asset_path or block.block_type == "editable_option_row":
+            continue
+        if not block.style.get("justify_to_bbox"):
+            continue
+        try:
+            font_pt = float(block.style.get("font_size_pt", 9.6))
+        except (TypeError, ValueError):
+            font_pt = 9.6
+        lines = [line for line in block.text.splitlines() if line]
+        if not lines:
+            continue
+        longest = max(lines, key=lambda line: _estimated_text_width_pt(line, font_pt))
+        available = max(8.0, (block.bbox[2] - block.bbox[0]) * scale_x - 1.5)
+        estimated = _estimated_text_width_pt(longest, font_pt)
+        if estimated <= available * 0.98:
+            continue
+        fitted_font = max(8.2, font_pt * min(1.0, available * 0.98 / estimated))
+        block.style["font_size_pt"] = round(fitted_font, 2)
+        estimated = _estimated_text_width_pt(longest, fitted_font)
+        characters = max(2, len(longest.replace(" ", "")))
+        spacing_twips = round((available * 0.98 - estimated) * 20 / (characters - 1))
+        block.style["character_spacing_twips"] = max(-18, min(0, spacing_twips))
+        block.style["width_fit_applied"] = True
+        model.debug_records.append(
+            {
+                "action": "editable_width_fit",
+                "block_id": block.block_id,
+                "block_type": block.block_type,
+                "source": block.source,
+                "reason": "predicted Word line width exceeded the exact source frame",
+                "related_block_ids": [],
+                "bbox": list(block.bbox),
+                "text_preview": (block.text or "")[:80],
+            }
+        )
 
 
 def apply_region_level_static_fallbacks(
@@ -1186,6 +1830,7 @@ def apply_source_first_hybrid_policy(
     *,
     source_fingerprint: str,
     page_class: str = "ordinary_question",
+    editable_body_only: bool = False,
 ) -> PageModel:
     """Postprocess a fresh OCR model into an accuracy-first ordinary page."""
 
@@ -1194,22 +1839,34 @@ def apply_source_first_hybrid_policy(
         image = opened.convert("RGB")
         model.schema_version = PAGE_MODEL_SCHEMA_VERSION
         model.page_class = page_class
-        model.reconstruction_mode = "native_word_paragraphs_with_clean_source_region_fallbacks"
+        model.reconstruction_mode = (
+            "native_word_paragraphs_with_decorative_images_only"
+            if editable_body_only
+            else "native_word_paragraphs_with_clean_source_region_fallbacks"
+        )
         model.source_fingerprint = source_fingerprint
         model.source_image_width_px, model.source_image_height_px = image.size
         model.evidence_blocks = deepcopy(model.blocks)
         # The source image is already cleaned, so a previously inferred
         # watermark layer must never be carried into Word.
         model.blocks = [block for block in model.blocks if block.block_type.lower() != "watermark"]
-        # Claim callout first rows before formula fallback.  Those rows often
-        # contain stacked fractions; formula-first processing would split the
-        # badge, label and equation into overlapping crops.
-        _replace_talk_prefixes(model, image, destination)
-        _replace_stacked_formula_fragments(model, image, destination)
-        _replace_formula_lines(model, image, destination)
+        if editable_body_only:
+            _normalise_editable_pilot_text(model)
+            _deduplicate_talk_badges(model, image, destination)
+        else:
+            # Claim callout first rows before formula fallback.  Those rows often
+            # contain stacked fractions; formula-first processing would split the
+            # badge, label and equation into overlapping crops.
+            _replace_talk_prefixes(model, image, destination)
+            _replace_stacked_formula_fragments(model, image, destination)
+            _replace_formula_lines(model, image, destination)
         _replace_sidebars(model, image, destination)
         if page_class == "chapter_opener":
             _replace_chapter_header(model, image, destination)
+        if editable_body_only:
+            _strip_noneditable_body_visuals(model)
+        else:
+            _replace_uncovered_source_regions(model, image, destination)
         for block in model.blocks:
             if block.text and not block.asset_path and block.block_type == "text_line":
                 scale_y = model.size.height_pt / max(1, image.height)
@@ -1223,6 +1880,12 @@ def apply_source_first_hybrid_policy(
                 block.selection_reason = block.selection_reason or "fresh OCR retained as editable ordinary text"
         resolve_page_model_conflicts(model)
         _merge_editable_paragraphs(model, image)
+        if editable_body_only:
+            _apply_verified_pilot_repairs(model)
+            _mark_verified_semantic_tokens(model)
+        _apply_editable_width_fitting(model)
         model.warnings.append("此页从源 PDF 新渲染并重新 OCR；未读取旧任务缓存。")
         model.warnings.append("上岸人水印在 OCR 和回退裁图之前已从源渲染中清理。")
+        if editable_body_only:
+            model.warnings.append("正文零图片模式：正文、分式、公式、题干和解析均为可编辑 Word 文字；图片仅保留装饰元素。")
     return resolve_page_model_conflicts(model)

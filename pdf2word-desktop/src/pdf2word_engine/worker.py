@@ -9,7 +9,11 @@ from typing import Any
 
 from .execution import resolve_ocr_execution_profile
 from .ocr import paddleocr_capability
-from .pipeline import create_source_first_pilot
+from .pipeline import (
+    DEFAULT_CURRENT_OUTPUT_DIR,
+    DEFAULT_CURRENT_WORKSPACE_DIR,
+    create_current_source_first_pilot,
+)
 from .preflight import inspect_pdf
 
 
@@ -31,10 +35,10 @@ def _handle(request: dict[str, Any]) -> None:
         _send({"protocol_version": 1, "request_id": request_id, "ok": True, "result": report.to_dict(include_page_sizes=False)})
         return
     if command == "source_first_pilot":
-        docx, quality_report, manifest = create_source_first_pilot(
+        docx, quality_report, manifest = create_current_source_first_pilot(
             Path(request["source"]),
-            output_dir=Path(request["output_dir"]),
-            workspace_dir=Path(request["workspace_dir"]),
+            output_dir=Path(request.get("output_dir", DEFAULT_CURRENT_OUTPUT_DIR)),
+            workspace_dir=Path(request.get("workspace_dir", DEFAULT_CURRENT_WORKSPACE_DIR)),
             dpi=int(request.get("dpi", 300)),
             ocr_device=str(request.get("ocr_device", "auto")),
             cpu_threads=int(request["cpu_threads"]) if request.get("cpu_threads") is not None else None,

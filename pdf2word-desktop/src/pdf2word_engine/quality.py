@@ -11,7 +11,7 @@ import unicodedata
 from PIL import Image
 
 from .conflicts import overlap_ratio, static_page_checks
-from .models import PageModel
+from .models import PageBlock, PageModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +28,65 @@ class CharacterErrorRate:
     reference_characters: int
     errors: int
     cer: float
+
+
+def is_allowed_decorative_image(model: PageModel, block: PageBlock) -> bool:
+    """Return whether an image is decoration rather than editable body content."""
+
+    if not block.asset_path:
+        return False
+    width = max(1.0, float(model.source_image_width_px or model.size.width_pt))
+    height = max(1.0, float(model.source_image_height_px or model.size.height_pt))
+    left, top, right, bottom = block.bbox
+    block_width = max(0.0, right - left)
+    block_height = max(0.0, bottom - top)
+    block_type = block.block_type.lower()
+    fallback_mode = (block.fallback_mode or "").lower()
+    text = normalize_cer_text(block.text or "")
+
+    if fallback_mode in {
+        "chapter_header_source_image",
+        "sidebar_source_image",
+        "sidebar_page_number_source_image",
+        "source_decoration_strip",
+    }:
+        return True
+    if block_type in {"header", "logo"} and top <= height * 0.12:
+        return True
+    is_talk_badge = (
+        block_type in {"talk_badge_image", "talk_callout_tag_image"}
+        or text == "谈"
+        or "talk_badge" in fallback_mode
+    )
+    return bool(
+        is_talk_badge
+        and left <= width * 0.30
+        and block_width <= width * 0.08
+        and block_height <= height * 0.10
+    )
+
+
+def body_image_blocks(model: PageModel) -> list[PageBlock]:
+    """Return image-backed blocks that occupy document body content."""
+
+    return [
+        block
+        for block in model.blocks
+        if block.asset_path and not is_allowed_decorative_image(model, block)
+    ]
+
+
+def assert_body_content_editable(models: list[PageModel]) -> None:
+    """Reject a candidate before DOCX creation if any body content is an image."""
+
+    failures = [
+        (model.page_index + 1, block.block_id, block.fallback_mode or block.block_type)
+        for model in models
+        for block in body_image_blocks(model)
+    ]
+    if failures:
+        details = ", ".join(f"第{page}页 {block_id}({mode})" for page, block_id, mode in failures)
+        raise ValueError(f"正文零图片门禁失败：{details}")
 
 
 def normalize_cer_text(value: str) -> str:
@@ -72,6 +131,10 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
     automatic_repairs = 0
     coverage_failures: list[int] = []
     page_coverages: list[float] = []
+    source_completeness_repair_pages: list[int] = []
+    width_fit_pages: list[int] = []
+    body_image_failure_pages: list[int] = []
+    total_body_image_blocks = 0
     for model in sorted(models, key=lambda item: item.page_index):
         fallback_blocks = [
             {
@@ -85,6 +148,10 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
             for block in model.blocks
             if block.asset_path
         ]
+        body_fallbacks = body_image_blocks(model)
+        if body_fallbacks:
+            body_image_failure_pages.append(model.page_index + 1)
+            total_body_image_blocks += len(body_fallbacks)
         editable_text_blocks = sum(1 for block in model.blocks if block.text and not block.asset_path)
         total_text_blocks += editable_text_blocks
         total_fallback_blocks += len(fallback_blocks)
@@ -103,6 +170,8 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
             "talk_badge_image",
             "talk_callout_tag_image",
             "image",
+            "region_fallback_image",
+            "source_uncovered_region",
         }
         excluded_owners = [
             block
@@ -161,6 +230,10 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         )
         if explicit_formula_fallback or formula_heavy_source_crop:
             formula_pages.append(model.page_index + 1)
+        if any(block.fallback_mode == "uncovered_source_region_image" for block in model.blocks):
+            source_completeness_repair_pages.append(model.page_index + 1)
+        if any(record.get("action") == "editable_width_fit" for record in model.debug_records):
+            width_fit_pages.append(model.page_index + 1)
         if any(block.block_type == "full_page_fallback" for block in model.blocks):
             full_page_fallbacks.append(model.page_index + 1)
         pages.append(
@@ -177,6 +250,8 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
                 "editable_coverage_gate": "passed" if coverage_passed else "failed",
                 "image_area_coverage": round(image_area_coverage, 4),
                 "image_fallback_blocks": fallback_blocks,
+                "body_image_blocks": [block.block_id for block in body_fallbacks],
+                "body_editability_gate": "passed" if not body_fallbacks else "failed",
                 "warnings": model.warnings,
                 "static_findings": findings,
                 "conflict_decisions": model.debug_records,
@@ -185,21 +260,34 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         )
     return {
         "schema_version": 2,
-        "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures else "requires_review",
+        "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures and not body_image_failure_pages else "requires_review",
         "pages": pages,
         "summary": {
             "page_count": len(pages),
             "editable_text_blocks": total_text_blocks,
             "image_fallback_blocks": total_fallback_blocks,
+            "body_image_blocks": total_body_image_blocks,
+            "body_image_failure_pages": body_image_failure_pages,
             "conflict_pages": conflict_pages,
             "overlap_warning_pages": [page["page"] for page in pages if page["overlap_warnings"]],
             "formula_fallback_pages": formula_pages,
             "full_page_fallback_pages": full_page_fallbacks,
             "low_confidence_pages": low_confidence_pages,
+            "source_completeness_repair_pages": source_completeness_repair_pages,
+            "editable_width_fit_pages": width_fit_pages,
             "editable_coverage_failure_pages": coverage_failures,
             "mean_editable_character_coverage": round(fmean(page_coverages), 4) if page_coverages else 0.0,
             "automatic_repairs": automatic_repairs,
-            "manual_sampling_pages": sorted(set(conflict_pages + low_confidence_pages + formula_pages + full_page_fallbacks)),
+            "manual_sampling_pages": sorted(
+                set(
+                    conflict_pages
+                    + low_confidence_pages
+                    + formula_pages
+                    + full_page_fallbacks
+                    + source_completeness_repair_pages
+                    + width_fit_pages
+                )
+            ),
             "source_word_render_difference": "generated by the current source-first end-to-end sampling gate; static completion does not imply a full-book raster pass",
         },
     }

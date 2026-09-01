@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from collections.abc import Callable
 from pathlib import Path
 
@@ -14,11 +15,10 @@ from .job_store import file_sha256
 from .models import PageModel, RenderedPage
 from .ocr import FocusedOcrPipelineCache, create_paddle_pipeline, predict_page_model, write_page_model
 from .preflight import inspect_pdf
-from .quality import editable_quality_report
+from .quality import assert_body_content_editable, editable_quality_report
 from .renderer import render_pages
 from .source_first import (
     PILOT_PAGE_INDICES,
-    apply_region_level_static_fallbacks,
     apply_source_first_hybrid_policy,
     blank_page_model,
     classify_source_page,
@@ -31,6 +31,9 @@ from .word import create_positioned_editable_docx
 
 
 ProgressCallback = Callable[[dict[str, object]], None]
+
+DEFAULT_CURRENT_OUTPUT_DIR = Path("outputs/source-first-editable-v2-current")
+DEFAULT_CURRENT_WORKSPACE_DIR = Path("runtime/source-first-editable-v2-current")
 
 
 def parse_page_range(value: str | None, page_count: int) -> list[int]:
@@ -85,6 +88,141 @@ def ensure_workspace_capacity(source: Path, *destinations: Path) -> None:
             raise OSError(
                 f"磁盘空间不足：{probe} 可用 {free} bytes，当前任务至少需要 {required} bytes。"
             )
+
+
+def _remove_candidate_directory(path: Path) -> None:
+    if path.exists():
+        if not path.is_dir():
+            raise ValueError(f"候选目录路径被文件占用：{path}")
+        shutil.rmtree(path)
+
+
+def _replace_path_prefix(value: object, replacements: tuple[tuple[Path, Path], ...]) -> object:
+    if isinstance(value, dict):
+        return {key: _replace_path_prefix(item, replacements) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_path_prefix(item, replacements) for item in value]
+    if not isinstance(value, str):
+        return value
+    folded = value.casefold()
+    for previous, current in replacements:
+        previous_text = str(previous)
+        boundary = len(previous_text)
+        if folded.startswith(previous_text.casefold()) and (
+            len(value) == boundary or value[boundary : boundary + 1] in {"/", "\\"}
+        ):
+            return str(current) + value[boundary:]
+    return value
+
+
+def _rewrite_candidate_json_paths(
+    roots: tuple[Path, ...],
+    replacements: tuple[tuple[Path, Path], ...],
+) -> None:
+    for root in roots:
+        for path in root.rglob("*.json"):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rewritten = _replace_path_prefix(payload, replacements)
+            if rewritten != payload:
+                path.write_text(json.dumps(rewritten, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _validate_current_candidate_directories(output_dir: Path, workspace_dir: Path) -> None:
+    if output_dir == workspace_dir or output_dir in workspace_dir.parents or workspace_dir in output_dir.parents:
+        raise ValueError("当前候选输出目录与工作区必须相互独立，不能相同或互相嵌套。")
+    for path in (output_dir, workspace_dir):
+        if path.exists() and not path.is_dir():
+            raise ValueError(f"当前候选目录路径被文件占用：{path}")
+
+
+def _promote_current_candidate(
+    staging_output: Path,
+    current_output: Path,
+    staging_workspace: Path,
+    current_workspace: Path,
+) -> None:
+    token = uuid.uuid4().hex
+    pairs = ((staging_output, current_output), (staging_workspace, current_workspace))
+    backups: list[tuple[Path, Path]] = []
+    promoted: list[Path] = []
+    try:
+        for _, current in pairs:
+            current.parent.mkdir(parents=True, exist_ok=True)
+            if current.exists():
+                backup = current.parent / f".{current.name}.previous-{token}"
+                current.replace(backup)
+                backups.append((current, backup))
+        for staging, current in pairs:
+            staging.replace(current)
+            promoted.append(current)
+    except BaseException:
+        for current in reversed(promoted):
+            _remove_candidate_directory(current)
+        for current, backup in reversed(backups):
+            if backup.exists():
+                backup.replace(current)
+        raise
+    for _, backup in backups:
+        _remove_candidate_directory(backup)
+
+
+def create_current_source_first_pilot(
+    source_pdf: str | Path,
+    *,
+    output_dir: str | Path = DEFAULT_CURRENT_OUTPUT_DIR,
+    workspace_dir: str | Path = DEFAULT_CURRENT_WORKSPACE_DIR,
+    dpi: int = 300,
+    ocr_device: str = "auto",
+    cpu_threads: int | None = None,
+    progress: ProgressCallback | None = None,
+) -> tuple[Path, Path, Path]:
+    """Build and publish the single current six-page candidate.
+
+    The active candidate is never touched until a fresh source-first run has
+    completed successfully. A failed run removes its unique staging output and
+    workspace automatically. A successful run atomically promotes both staging
+    directories and removes the previous current candidate.
+    """
+
+    current_output = Path(output_dir).expanduser().resolve()
+    current_workspace = Path(workspace_dir).expanduser().resolve()
+    _validate_current_candidate_directories(current_output, current_workspace)
+    token = uuid.uuid4().hex
+    staging_output = current_output.parent / f".{current_output.name}.pending-{token}"
+    staging_workspace = current_workspace.parent / f".{current_workspace.name}.pending-{token}"
+    replacements = (
+        (staging_output, current_output),
+        (staging_workspace, current_workspace),
+    )
+    try:
+        docx, quality_report, manifest = create_source_first_pilot(
+            source_pdf,
+            output_dir=staging_output,
+            workspace_dir=staging_workspace,
+            dpi=dpi,
+            ocr_device=ocr_device,
+            cpu_threads=cpu_threads,
+            progress=progress,
+        )
+        relative_docx = docx.relative_to(staging_output)
+        relative_quality = quality_report.relative_to(staging_output)
+        relative_manifest = manifest.relative_to(staging_workspace)
+        _rewrite_candidate_json_paths((staging_output, staging_workspace), replacements)
+        _promote_current_candidate(
+            staging_output,
+            current_output,
+            staging_workspace,
+            current_workspace,
+        )
+    except BaseException:
+        _remove_candidate_directory(staging_output)
+        _remove_candidate_directory(staging_workspace)
+        raise
+    return (
+        current_output / relative_docx,
+        current_output / relative_quality,
+        current_workspace / relative_manifest,
+    )
 
 
 def create_source_first_pilot(
@@ -213,6 +351,7 @@ def create_source_first_pilot(
                 raw_output_path=page_dir / "paddle-raw.json",
                 region_directory=page_dir / "regions",
                 focused_pipeline=focused_pipeline,
+                editable_body_only=True,
             )
             model = apply_source_first_hybrid_policy(
                 model,
@@ -220,11 +359,7 @@ def create_source_first_pilot(
                 page_dir / "regions",
                 source_fingerprint=fingerprint,
                 page_class=page_class,
-            )
-            model = apply_region_level_static_fallbacks(
-                model,
-                clean_image,
-                page_dir / "regions" / "static-gate-fallbacks",
+                editable_body_only=True,
             )
             _emit(progress, {"type": "page_completed", "page": physical_page, "stage": "fresh_source_ocr"})
         if model.blocks and physical_page in available_physical_pages:
@@ -232,6 +367,7 @@ def create_source_first_pilot(
         write_page_model(model, page_dir / "page-model.json")
         models.append(model)
 
+    assert_body_content_editable(models)
     docx = destination / f"{source.stem}-第二轮6页可编辑混合样本-v2.docx"
     quality_path = destination / f"{source.stem}-第二轮6页可编辑混合样本-质量报告-v2.json"
     create_positioned_editable_docx(models, docx)

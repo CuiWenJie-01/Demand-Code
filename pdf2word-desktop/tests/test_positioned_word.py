@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+import re
 
 from PIL import Image
 
@@ -102,3 +103,35 @@ class PositionedEditableWordTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(ValueError, "拒绝写入旧式 VML"):
                 create_positioned_editable_docx([model], Path(temp) / "legacy.docx")
+
+    def test_short_native_fragment_frame_expands_to_prevent_word_wrap(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = PageModel(
+                schema_version=7,
+                page_index=0,
+                size=PageSize(500, 700),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1000,
+                source_image_height_px=1400,
+                page_class="ordinary_question",
+                blocks=[
+                    PageBlock(
+                        "short",
+                        "editable_callout_body",
+                        (100, 200, 150, 240),
+                        0,
+                        0,
+                        text="代入。",
+                        style={"font_size_pt": 10.0, "line_spacing_pt": 12.0, "line_count": 1},
+                    )
+                ],
+            )
+
+            output = create_positioned_editable_docx([model], root / "short.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        width_match = re.search(r'<w:framePr[^>]*w:w="(\d+)"', document_xml)
+        self.assertIsNotNone(width_match)
+        self.assertGreater(int(width_match.group(1)), 500)

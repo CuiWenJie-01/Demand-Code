@@ -7,6 +7,7 @@ from zipfile import ZipFile
 from PIL import Image, ImageDraw
 
 from pdf2word_engine.models import PageBlock, PageModel, PageSize, PdfKind
+from pdf2word_engine.quality import assert_body_content_editable, body_image_blocks
 from pdf2word_engine.source_first import (
     apply_region_level_static_fallbacks,
     apply_source_first_hybrid_policy,
@@ -120,9 +121,10 @@ def test_callout_fallback_uses_one_complete_first_row_and_keeps_later_body_edita
         source_image_height_px=1400,
         blocks=[
             PageBlock("badge", "talk_badge_image", (100, 300, 160, 360), 0, 0),
-            PageBlock("label", "text_line", (170, 305, 230, 350), 0, 1, text="解析", style={"semantic_role": "callout_label"}),
-            PageBlock("first", "text_line", (250, 305, 850, 350), 0, 2, text="第一行与标签必须作为完整源图，不得相互覆盖。"),
-            PageBlock("second", "text_line", (250, 385, 850, 430), 0, 3, text="第二行正文仍然必须可以编辑。"),
+            PageBlock("inline-badge", "talk_badge_image", (225, 310, 275, 360), 0, 1),
+            PageBlock("label", "text_line", (170, 305, 230, 350), 0, 2, text="解析", style={"semantic_role": "callout_label"}),
+            PageBlock("first", "text_line", (250, 305, 850, 350), 0, 3, text="第一行与标签必须作为完整源图，不得相互覆盖。"),
+            PageBlock("second", "text_line", (250, 385, 850, 430), 0, 4, text="第二行正文仍然必须可以编辑。"),
         ],
     )
 
@@ -138,8 +140,90 @@ def test_callout_fallback_uses_one_complete_first_row_and_keeps_later_body_edita
     editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
     assert row.bbox[2] > 850
     assert row.bbox[3] < 385
+    assert len([block for block in result.blocks if block.fallback_mode == "callout_first_row_source_image"]) == 1
     assert "第一行" not in editable_text
     assert "第二行正文仍然必须可以编辑" in editable_text
+
+
+def test_strict_editable_body_keeps_formula_and_callout_text_native(tmp_path: Path) -> None:
+    source = tmp_path / "strict.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=8,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("badge", "text_line", (157, 300, 205, 355), 0, 0, text="谈"),
+            PageBlock("duplicate-badge", "talk_badge_image", (230, 305, 275, 360), 0, 1),
+            PageBlock("label", "text_line", (210, 305, 270, 350), 0, 2, text="解析", style={"semantic_role": "callout_label"}),
+            PageBlock("math", "text_line", (290, 305, 850, 350), 0, 3, confidence=0.99, text="8x+3y=6300，χ=630。"),
+            PageBlock("plain", "text_line", (250, 385, 850, 430), 0, 4, confidence=0.99, text="普通解释文字仍然保持可编辑。"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "strict-regions",
+        source_fingerprint="fresh",
+        page_class="ordinary_question",
+        editable_body_only=True,
+    )
+
+    editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
+    images = [block for block in result.blocks if block.asset_path]
+    assert len(images) == 1
+    assert images[0].fallback_mode == "talk_badge_source_image"
+    assert "解析" in editable_text
+    assert "8x+3y=6300，x=630" in editable_text
+    assert "普通解释文字仍然保持可编辑" in editable_text
+    assert body_image_blocks(result) == []
+    assert_body_content_editable([result])
+
+
+def test_body_image_gate_rejects_formula_crop_but_accepts_decoration(tmp_path: Path) -> None:
+    asset = tmp_path / "asset.png"
+    Image.new("RGB", (20, 20), "white").save(asset)
+    model = PageModel(
+        schema_version=7,
+        page_index=7,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock(
+                "header",
+                "header",
+                (50, 50, 200, 100),
+                0,
+                0,
+                asset_path=str(asset),
+                fallback_mode="region_source_image",
+            ),
+            PageBlock(
+                "formula",
+                "formula",
+                (200, 400, 800, 460),
+                0,
+                1,
+                asset_path=str(asset),
+                fallback_mode="formula_line_source_image",
+            ),
+        ],
+    )
+
+    assert [block.block_id for block in body_image_blocks(model)] == ["formula"]
+    try:
+        assert_body_content_editable([model])
+    except ValueError as exc:
+        assert "正文零图片门禁失败" in str(exc)
+        assert "formula" in str(exc)
+    else:
+        raise AssertionError("body image gate should reject formula crops")
 
 
 def test_sidebar_crop_does_not_capture_editable_body_start(tmp_path: Path) -> None:
@@ -201,4 +285,155 @@ def test_static_gate_replaces_only_failing_region_not_page(tmp_path: Path) -> No
     assert Path(fallback.asset_path or "").is_file()
     assert fallback.bbox == (95.0, 295.0, 905.0, 355.0)
     assert all(block.block_type != "full_page_fallback" for block in result.blocks)
+
+
+def test_uncovered_source_ink_is_repaired_by_local_source_crop(tmp_path: Path) -> None:
+    source = tmp_path / "missing-line.png"
+    image = Image.new("RGB", (1000, 1400), "white")
+    draw = ImageDraw.Draw(image)
+    for x in range(150, 850, 32):
+        draw.rectangle((x, 500, x + 20, 516), fill="black")
+    for x in range(150, 310, 24):
+        draw.rectangle((x, 800, x + 16, 820), fill="black")
+    image.save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=7,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock(
+                "recognized-line",
+                "text_line",
+                (150, 600, 850, 635),
+                0,
+                0,
+                confidence=0.99,
+                text="这一行已被识别，上一行完全漏检。",
+            )
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="ordinary_question",
+    )
+
+    repairs = [block for block in result.blocks if block.fallback_mode == "uncovered_source_region_image"]
+    repair = next(block for block in repairs if block.bbox[1] < 500 < block.bbox[3])
+    assert repair.bbox[1] < 500 < repair.bbox[3]
+    assert Path(repair.asset_path or "").is_file()
+    assert any(block.bbox[1] < 800 < block.bbox[3] for block in repairs)
+    assert all(block.block_type != "full_page_fallback" for block in result.blocks)
+
+
+def test_linear_formula_line_uses_source_crop_and_keeps_plain_line_editable(tmp_path: Path) -> None:
+    source = tmp_path / "formula.png"
+    image = Image.new("RGB", (1000, 1400), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((150, 300, 850, 334), fill="black")
+    image.save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=22,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("math", "text_line", (150, 300, 850, 335), 0, 0, confidence=0.99, text="8+3y=6300，6x+6y=6300。"),
+            PageBlock("plain", "text_line", (150, 400, 850, 435), 0, 1, confidence=0.99, text="普通解释文字仍然保持可编辑。"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="ordinary_question",
+    )
+
+    formula = next(block for block in result.blocks if block.fallback_mode == "formula_line_source_image")
+    editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
+    assert Path(formula.asset_path or "").is_file()
+    assert "8+3y" not in editable_text
+    assert "普通解释文字仍然保持可编辑" in editable_text
+
+
+def test_single_fraction_numerator_claims_omitted_denominator(tmp_path: Path) -> None:
+    source = tmp_path / "fraction.png"
+    image = Image.new("RGB", (1000, 1400), "white")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((500, 300, 516, 320), fill="black")
+    draw.line((494, 328, 522, 328), fill="black", width=3)
+    draw.rectangle((500, 338, 516, 358), fill="black")
+    image.save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=6,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("prefix", "text_line", (150, 306, 480, 336), 0, 0, confidence=0.99, text="生产人数为总数的"),
+            PageBlock("numerator", "text_line", (500, 300, 516, 320), 0, 1, confidence=0.99, text="4"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="chapter_opener",
+    )
+
+    formula = next(block for block in result.blocks if block.fallback_mode == "formula_row_source_image")
+    assert formula.bbox[1] < 300
+    assert formula.bbox[3] > 350
+    assert all((block.text or "") != "4" for block in result.blocks)
+
+
+def test_width_fit_marks_single_line_that_would_clip_in_word(tmp_path: Path) -> None:
+    source = tmp_path / "long-line.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=7,
+        page_index=20,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock(
+                "long",
+                "text_line",
+                (150, 300, 800, 335),
+                0,
+                0,
+                confidence=0.99,
+                text="每当有一个人捐款额变为二千元总钱数增加一千七百元并且这一整行必须完整显示不能裁掉尾字。",
+            )
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="formula_heavy",
+    )
+
+    editable = next(block for block in result.blocks if block.text and not block.asset_path)
+    assert editable.style["width_fit_applied"] is True
+    assert editable.style["font_size_pt"] < 10.2
+    assert any(record["action"] == "editable_width_fit" for record in result.debug_records)
 

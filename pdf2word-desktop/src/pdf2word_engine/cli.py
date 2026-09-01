@@ -16,7 +16,11 @@ from .errors import Pdf2WordError
 from .execution import resolve_ocr_execution_profile
 from .models import PageModel, PageSize, PdfKind
 from .ocr import FocusedOcrPipelineCache, create_paddle_pipeline, predict_page_model, write_page_model
-from .pipeline import create_source_first_pilot
+from .pipeline import (
+    DEFAULT_CURRENT_OUTPUT_DIR,
+    DEFAULT_CURRENT_WORKSPACE_DIR,
+    create_current_source_first_pilot,
+)
 from .preflight import inspect_pdf
 from .word import create_positioned_editable_docx
 from .word_render import verify_with_microsoft_word
@@ -35,8 +39,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="从源 PDF 全新渲染并生成第 7、8、9、10、21、23 页可编辑混合样本",
     )
     source_pilot.add_argument("source", type=Path)
-    source_pilot.add_argument("--output-dir", type=Path, required=True)
-    source_pilot.add_argument("--workspace-dir", type=Path, required=True, help="必须为空；拒绝读取旧 OCR/PageModel")
+    source_pilot.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_CURRENT_OUTPUT_DIR,
+        help="当前候选输出目录；新任务成功后替换旧候选",
+    )
+    source_pilot.add_argument(
+        "--workspace-dir",
+        type=Path,
+        default=DEFAULT_CURRENT_WORKSPACE_DIR,
+        help="当前候选工作区；失败任务自动清理，新任务成功后替换旧工作区",
+    )
     source_pilot.add_argument("--dpi", type=int, default=300)
     source_pilot.add_argument("--ocr-device", choices=["auto", "cpu", "gpu"], default="auto")
     source_pilot.add_argument("--cpu-threads", type=int)
@@ -95,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"警告: {warning}")
             return 0
         if args.command == "source-first-pilot":
-            docx, quality_report, manifest = create_source_first_pilot(
+            docx, quality_report, manifest = create_current_source_first_pilot(
                 args.source,
                 output_dir=args.output_dir,
                 workspace_dir=args.workspace_dir,

@@ -1621,6 +1621,7 @@ def materialize_visual_fallbacks(
     region_directory: str | Path,
     *,
     focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
+    editable_body_only: bool = False,
 ) -> PageModel:
     """Crop non-textual OCR regions for editable DOCX image fallback.
 
@@ -1637,17 +1638,17 @@ def materialize_visual_fallbacks(
     fallback_types = {
         "image",
         "chart",
-        "formula",
         "logo",
         "watermark",
         "table",
         # Narrow decorative title/header regions are often clipped by Word VML
         # text boxes. Preserve their appearance as a local image instead.
-        "paragraph_title",
         "header",
         "talk_badge_image",
         "talk_callout_tag_image",
     }
+    if not editable_body_only:
+        fallback_types.update({"formula", "paragraph_title"})
     destination = Path(region_directory)
     with Image.open(image_path) as source_image:
         image = source_image.convert("RGB")
@@ -1659,10 +1660,12 @@ def materialize_visual_fallbacks(
         # first workflow removes it before OCR, and keeping a second generic
         # detector here could reintroduce the very watermark the user rejected.
         _restore_callout_ratings_from_source(model, image)
-        _collapse_formula_fragments_to_image_fallback(model, page_width_px=width)
+        if not editable_body_only:
+            _collapse_formula_fragments_to_image_fallback(model, page_width_px=width)
         _recover_fragmented_text_tails(model, image, destination, focused_pipeline=focused_pipeline)
-        _restore_fragmented_text_tails_as_images(model)
-        _restore_option_figure_strip(model, page_width_px=width, page_height_px=height)
+        if not editable_body_only:
+            _restore_fragmented_text_tails_as_images(model)
+            _restore_option_figure_strip(model, page_width_px=width, page_height_px=height)
         for block in model.blocks:
             if block.block_type.lower() not in fallback_types:
                 continue
@@ -2191,6 +2194,7 @@ def predict_page_model(
     native_word_output_dir: str | Path | None = None,
     region_directory: str | Path | None = None,
     focused_pipeline: FocusedOcrPipelineCache | Any | None = None,
+    editable_body_only: bool = False,
 ) -> PageModel:
     """Run one rendered PDF page through Paddle and return the normalized model."""
 
@@ -2240,6 +2244,7 @@ def predict_page_model(
             image_path,
             region_directory,
             focused_pipeline=focused_pipeline,
+            editable_body_only=editable_body_only,
         )
     if raw_output_path is not None:
         destination = Path(raw_output_path)
