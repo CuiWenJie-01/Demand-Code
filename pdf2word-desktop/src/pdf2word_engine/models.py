@@ -12,7 +12,7 @@ from typing import Any, Mapping
 # for Word output.  ``blocks`` remains the canonical output list for backwards
 # compatibility; serialized models also expose it as ``output_blocks`` so a
 # quality report cannot confuse raw candidates with rendered content.
-PAGE_MODEL_SCHEMA_VERSION = 7
+PAGE_MODEL_SCHEMA_VERSION = 10
 
 
 class PdfKind(str, Enum):

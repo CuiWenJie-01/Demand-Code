@@ -128,3 +128,22 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue((current_workspace / "accepted.json").exists())
             self.assertEqual(list((root / "outputs").glob(".*.pending-*")), [])
             self.assertEqual(list((root / "runtime").glob(".*.pending-*")), [])
+
+    def test_open_office_candidate_fails_before_starting_fresh_ocr(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            current_output = root / "outputs" / "current"
+            current_workspace = root / "runtime" / "current"
+            current_output.mkdir(parents=True)
+            current_workspace.mkdir(parents=True)
+            (current_output / "~$candidate.docx").write_bytes(b"lock")
+
+            with patch("pdf2word_engine.pipeline.create_source_first_pilot") as create_pilot:
+                with self.assertRaisesRegex(PermissionError, "Word/WPS"):
+                    create_current_source_first_pilot(
+                        root / "source.pdf",
+                        output_dir=current_output,
+                        workspace_dir=current_workspace,
+                    )
+
+            create_pilot.assert_not_called()

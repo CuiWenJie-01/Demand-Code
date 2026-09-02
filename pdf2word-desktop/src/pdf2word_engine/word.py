@@ -19,6 +19,7 @@ from pypdf import PdfReader
 from .errors import OcrRequiredError
 from .conflicts import resolve_page_model_conflicts
 from .models import PageBlock, PageModel, PageSize, PdfKind
+from .native_math import iter_stacked_fractions, stacked_fraction_count
 
 
 EMU_PER_POINT = 12_700
@@ -257,7 +258,48 @@ def _set_native_run_style(
         spacing.set(qn("w:val"), str(character_spacing_twips))
 
 
-def _append_native_text_runs(paragraph: object, block: PageBlock) -> None:
+def _source_line_character_spacings(block: PageBlock, model: PageModel) -> list[int]:
+    """Calculate Word character expansion from each source text-row measure.
+
+    The calculation is deliberately row-local.  Word's paragraph justification
+    would also distribute the short final row and the answer parentheses;
+    source rows tell us exactly which rows were visually full in the PDF.
+    """
+
+    try:
+        font_pt = float(block.style.get("font_size_pt", 9.6))
+    except (TypeError, ValueError):
+        font_pt = 9.6
+    try:
+        fallback = int(block.style.get("character_spacing_twips", 0))
+    except (TypeError, ValueError):
+        fallback = 0
+    lines = (block.text or "").replace("\r", "").split("\n")
+    raw_layouts = block.style.get("source_line_layout")
+    if not isinstance(raw_layouts, list) or len(raw_layouts) != len(lines):
+        return [fallback] * len(lines)
+    scale_x, _ = _page_coordinate_scale(model)
+    spacings: list[int] = []
+    for line, raw in zip(lines, raw_layouts):
+        if not isinstance(raw, dict) or not raw.get("justify"):
+            spacings.append(fallback)
+            continue
+        try:
+            source_measure = (float(raw["right_px"]) - float(raw["left_px"])) * scale_x
+        except (KeyError, TypeError, ValueError):
+            spacings.append(fallback)
+            continue
+        natural = _estimated_native_line_width_pt(line, font_pt, fallback)
+        adjustable = max(1, sum(character != "\t" for character in line) - 1)
+        required = round((source_measure - natural) * 20 / adjustable)
+        # A conservative cap avoids visibly loose OCR rows if a source band
+        # picks up a stray mark.  Negative values retain the existing narrow
+        # line safeguard, positive values recreate the source's full measure.
+        spacings.append(max(-18, min(72, required)))
+    return spacings
+
+
+def _append_native_text_runs(paragraph: object, block: PageBlock, model: PageModel) -> None:
     text = (block.text or "").replace("\r", "")
     if not text:
         return
@@ -273,28 +315,15 @@ def _append_native_text_runs(paragraph: object, block: PageBlock) -> None:
         bold_prefix_length = max(0, min(len(text), int(block.style.get("bold_prefix_length", 0))))
     except (TypeError, ValueError):
         bold_prefix_length = 0
-    try:
-        spacing = int(block.style.get("character_spacing_twips", 0))
-    except (TypeError, ValueError):
-        spacing = 0
+    line_spacings = _source_line_character_spacings(block, model)
     default_color = str(block.style.get("font_color", "222222"))
     if block.block_type == "editable_heading":
         default_color = str(block.style.get("font_color", "EF168B"))
     east_asia_font = str(block.style.get("font_name_east_asia", "SimSun"))
     ascii_font = str(block.style.get("font_name_ascii", "Times New Roman"))
-    boundaries = sorted({0, len(text), accent_length, bold_prefix_length})
-    for start, end in zip(boundaries, boundaries[1:]):
-        if start >= end:
-            continue
-        color = "EF168B" if start < accent_length else default_color
-        bold = start < bold_prefix_length
-        segment = text[start:end]
-        parts = re.split(r"([\n\t])", segment)
-        for part in parts:
+    def append_plain(value: str, *, color: str, bold: bool, spacing: int) -> None:
+        for part in re.split(r"(\t)", value):
             if not part:
-                continue
-            if part == "\n":
-                paragraph.add_run().add_break()
                 continue
             if part == "\t":
                 paragraph.add_run().add_tab()
@@ -309,6 +338,95 @@ def _append_native_text_runs(paragraph: object, block: PageBlock) -> None:
                 ascii_font=ascii_font,
                 character_spacing_twips=spacing,
             )
+
+    source_lines = text.split("\n")
+    global_start = 0
+    for line_index, source_line in enumerate(source_lines):
+        spacing = line_spacings[min(line_index, len(line_spacings) - 1)] if line_spacings else 0
+        global_end = global_start + len(source_line)
+        boundaries = sorted(
+            {
+                global_start,
+                global_end,
+                max(global_start, min(global_end, accent_length)),
+                max(global_start, min(global_end, bold_prefix_length)),
+            }
+        )
+        for start, end in zip(boundaries, boundaries[1:]):
+            if start >= end:
+                continue
+            color = "EF168B" if start < accent_length else default_color
+            bold = start < bold_prefix_length
+            segment = text[start:end]
+            cursor = 0
+            for fraction in iter_stacked_fractions(segment):
+                append_plain(segment[cursor : fraction.start], color=color, bold=bold, spacing=spacing)
+                paragraph._p.append(
+                    _native_fraction_xml(
+                        fraction.numerator,
+                        fraction.denominator,
+                        font_pt=font_pt,
+                        color=color,
+                        bold=bold,
+                    )
+                )
+                cursor = fraction.end
+            append_plain(segment[cursor:], color=color, bold=bold, spacing=spacing)
+        if line_index < len(source_lines) - 1:
+            paragraph.add_run().add_break()
+        global_start = global_end + 1
+
+
+def _native_fraction_xml(
+    numerator: str,
+    denominator: str,
+    *,
+    font_pt: float,
+    color: str,
+    bold: bool,
+) -> object:
+    """Build one editable inline OMML stacked fraction."""
+
+    size = max(14, round(font_pt * 2))
+    weight = "<w:b/>" if bold else ""
+
+    def math_run(value: str) -> str:
+        return (
+            "<m:r><m:rPr><m:sty m:val=\"p\"/></m:rPr><w:rPr>"
+            '<w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math" w:eastAsia="Cambria Math"/>'
+            f'<w:color w:val="{escape(color)}"/><w:sz w:val="{size}"/>{weight}'
+            "</w:rPr>"
+            f'<m:t xml:space="preserve">{escape(value)}</m:t></m:r>'
+        )
+
+    return parse_xml(
+        '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" '
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        "<m:f><m:fPr><m:type m:val=\"bar\"/><m:ctrlPr><w:rPr>"
+        '<w:rFonts w:ascii="Cambria Math" w:hAnsi="Cambria Math" w:eastAsia="Cambria Math"/>'
+        f'<w:color w:val="{escape(color)}"/><w:sz w:val="{size}"/>{weight}'
+        "</w:rPr></m:ctrlPr></m:fPr>"
+        f"<m:num>{math_run(numerator)}</m:num><m:den>{math_run(denominator)}</m:den>"
+        "</m:f></m:oMath>"
+    )
+
+
+def _append_inline_decorative_image(
+    paragraph: object,
+    model: PageModel,
+    block: PageBlock,
+) -> None:
+    if not block.asset_path or not Path(block.asset_path).is_file():
+        raise ValueError(f"行内谈标签素材不存在：{block.block_id}")
+    scale_x, scale_y = _page_coordinate_scale(model)
+    width = max(1.0, (block.bbox[2] - block.bbox[0]) * scale_x)
+    height = max(1.0, (block.bbox[3] - block.bbox[1]) * scale_y)
+    run = paragraph.add_run()
+    run.add_picture(str(block.asset_path), width=Emu(round(width * EMU_PER_POINT)), height=Emu(round(height * EMU_PER_POINT)))
+    # The asset is vertically tight to the visible source ink.  Avoid a
+    # renderer-specific baseline offset: Word and WPS disagree on how shifted
+    # inline pictures contribute to line metrics.
+    paragraph.add_run(" ")
 
 
 def _estimated_native_line_width_pt(value: str, font_pt: float, spacing_twips: int) -> float:
@@ -346,7 +464,16 @@ def _append_native_source_page(document: Document, model: PageModel, *, bookmark
     _format_page_paragraph(canvas)
     canvas.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
     canvas.paragraph_format.line_spacing = Pt(1)
-    images = [block for block in model.blocks if block.asset_path]
+    inline_images = {
+        str(block.style.get("inline_host_block_id")): block
+        for block in model.blocks
+        if block.asset_path and block.style.get("inline_decorative") and block.style.get("inline_host_block_id")
+    }
+    images = [
+        block
+        for block in model.blocks
+        if block.asset_path and not block.style.get("inline_decorative")
+    ]
     for image_block in sorted(images, key=lambda item: (item.z_index, item.reading_order)):
         _append_fallback_image(canvas, model, image_block)
         bookmark = str(image_block.style.get("bookmark_name", "")).strip()
@@ -395,7 +522,13 @@ def _append_native_source_page(document: Document, model: PageModel, *, bookmark
             line_spacing = float(block.style.get("line_spacing_pt", 12.0))
         except (TypeError, ValueError):
             line_spacing = 12.0
-        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        has_native_fraction = stacked_fraction_count(block.text) > 0
+        inline_label = inline_images.get(block.block_id)
+        paragraph.paragraph_format.line_spacing_rule = (
+            WD_LINE_SPACING.AT_LEAST
+            if has_native_fraction or inline_label is not None
+            else WD_LINE_SPACING.EXACTLY
+        )
         paragraph.paragraph_format.line_spacing = Pt(max(10.5, line_spacing))
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         if block.block_type == "editable_option_row":
@@ -406,13 +539,28 @@ def _append_native_source_page(document: Document, model: PageModel, *, bookmark
                     )
                 except (TypeError, ValueError):
                     continue
-        _append_native_text_runs(paragraph, block)
+        for stop in block.style.get("right_tab_stops_px", []):
+            try:
+                paragraph.paragraph_format.tab_stops.add_tab_stop(
+                    Pt(float(stop) * scale_x), WD_TAB_ALIGNMENT.RIGHT
+                )
+            except (TypeError, ValueError):
+                continue
+        if inline_label is not None:
+            _append_inline_decorative_image(paragraph, model, inline_label)
+        _append_native_text_runs(paragraph, block, model)
         try:
             line_count = max(1, int(block.style.get("line_count", (block.text or "").count("\n") + 1)))
         except (TypeError, ValueError):
             line_count = max(1, (block.text or "").count("\n") + 1)
         source_height = max(1.0, (block.bbox[3] - block.bbox[1]) * scale_y)
-        frame_height = max(source_height + 2.0, line_count * max(10.5, line_spacing) + 2.0)
+        label_height = (
+            max(0.0, (inline_label.bbox[3] - inline_label.bbox[1]) * scale_y)
+            if inline_label is not None
+            else 0.0
+        )
+        first_line_height = max(10.5, line_spacing, label_height)
+        frame_height = max(source_height + 2.0, first_line_height + (line_count - 1) * max(10.5, line_spacing) + 2.0)
         frame_width = max(8.0, right - left)
         if block.block_type != "editable_option_row":
             try:
@@ -427,13 +575,34 @@ def _append_native_source_page(document: Document, model: PageModel, *, bookmark
                 (_estimated_native_line_width_pt(line, font_pt, spacing_twips) for line in (block.text or "").splitlines()),
                 default=0.0,
             )
-            frame_width = min(max(8.0, model.size.width_pt - left), max(frame_width, required_width + 1.5))
+            if inline_label is not None:
+                label_width = max(0.0, (inline_label.bbox[2] - inline_label.bbox[0]) * scale_x)
+                # The source bbox begins at the host paragraph's left edge and
+                # includes the first-line indent plus the combined talk label.
+                # Account for that inline prefix when fitting the frame; using
+                # only body text width can wrap the final one or two Chinese
+                # characters back to the far-left frame edge.
+                required_width += first_line_indent + label_width + font_pt * 0.45
+            has_source_row_plan = bool(block.style.get("source_line_layout"))
+            # The row plan controls the visible end position with character
+            # spacing.  Word's CJK glyph metrics can nevertheless be a few
+            # points wider than the estimator, which otherwise wraps a final
+            # Chinese character onto a new row.  This invisible frame slack
+            # prevents that wrap without changing the source-row target.
+            source_width_with_slack = frame_width + (
+                font_pt * 2.0 if inline_label is not None else 0.0
+            ) + (font_pt * 3.0 if has_source_row_plan else 0.0)
+            frame_width = min(
+                max(8.0, model.size.width_pt - left),
+                max(source_width_with_slack, required_width + 1.5),
+            )
         ppr = paragraph._p.get_or_add_pPr()
+        frame_rule = "atLeast" if has_native_fraction or inline_label is not None else "exact"
         frame = parse_xml(
             '<w:framePr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
             f'w:w="{round(frame_width * 20)}" w:h="{round(frame_height * 20)}" '
             f'w:x="{round(left * 20)}" w:y="{round(top * 20)}" '
-            'w:hAnchor="page" w:vAnchor="page" w:wrap="none" w:hRule="exact"/>'
+            f'w:hAnchor="page" w:vAnchor="page" w:wrap="none" w:hRule="{frame_rule}"/>'
         )
         ppr.insert(0, frame)
 

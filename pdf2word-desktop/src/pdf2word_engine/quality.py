@@ -12,6 +12,7 @@ from PIL import Image
 
 from .conflicts import overlap_ratio, static_page_checks
 from .models import PageBlock, PageModel
+from .native_math import stacked_fraction_count
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,17 @@ def is_allowed_decorative_image(model: PageModel, block: PageBlock) -> bool:
         "sidebar_source_image",
         "sidebar_page_number_source_image",
         "source_decoration_strip",
+        "talk_label_source_image",
     }:
-        return True
+        if fallback_mode != "talk_label_source_image":
+            return True
+        return bool(
+            block_type == "talk_label_image"
+            and text in {"指数", "解析", "答案", "提示"}
+            and left <= width * 0.30
+            and block_width <= width * 0.14
+            and block_height <= height * 0.10
+        )
     if block_type in {"header", "logo"} and top <= height * 0.12:
         return True
     is_talk_badge = (
@@ -74,6 +84,23 @@ def body_image_blocks(model: PageModel) -> list[PageBlock]:
         for block in model.blocks
         if block.asset_path and not is_allowed_decorative_image(model, block)
     ]
+
+
+def _talk_label_crop_is_clipped(block: PageBlock) -> bool:
+    """Return true if saved decorative ink touches its crop boundary."""
+
+    if block.block_type != "talk_label_image" or not block.asset_path:
+        return False
+    asset = Path(block.asset_path)
+    if not asset.is_file():
+        return True
+    with Image.open(asset) as source:
+        alpha = source.convert("RGBA").getchannel("A")
+        bounds = alpha.getbbox()
+        if bounds is None:
+            return False
+        left, top, right, bottom = bounds
+        return left < 2 or top < 2 or right > alpha.width - 2 or bottom > alpha.height - 2
 
 
 def assert_body_content_editable(models: list[PageModel]) -> None:
@@ -134,7 +161,10 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
     source_completeness_repair_pages: list[int] = []
     width_fit_pages: list[int] = []
     body_image_failure_pages: list[int] = []
+    talk_label_crop_failure_pages: list[int] = []
+    answer_blank_failure_pages: list[int] = []
     total_body_image_blocks = 0
+    total_native_fraction_spans = 0
     for model in sorted(models, key=lambda item: item.page_index):
         fallback_blocks = [
             {
@@ -152,7 +182,25 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         if body_fallbacks:
             body_image_failure_pages.append(model.page_index + 1)
             total_body_image_blocks += len(body_fallbacks)
+        crop_failures = [block.block_id for block in model.blocks if _talk_label_crop_is_clipped(block)]
+        if crop_failures:
+            talk_label_crop_failure_pages.append(model.page_index + 1)
+        orphan_blanks = [
+            block.block_id
+            for block in model.blocks
+            if not block.asset_path
+            and str(block.style.get("semantic_role", "")) == "answer_blank"
+            and "".join((block.text or "").split()) in {"（", "）", "（）", "()"}
+        ]
+        if orphan_blanks:
+            answer_blank_failure_pages.append(model.page_index + 1)
         editable_text_blocks = sum(1 for block in model.blocks if block.text and not block.asset_path)
+        native_fraction_spans = sum(
+            stacked_fraction_count(block.text)
+            for block in model.blocks
+            if block.text and not block.asset_path
+        )
+        total_native_fraction_spans += native_fraction_spans
         total_text_blocks += editable_text_blocks
         total_fallback_blocks += len(fallback_blocks)
         findings = static_page_checks(model)
@@ -169,6 +217,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
             "logo",
             "talk_badge_image",
             "talk_callout_tag_image",
+            "talk_label_image",
             "image",
             "region_fallback_image",
             "source_uncovered_region",
@@ -245,6 +294,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
                 "reconstruction_mode": model.reconstruction_mode,
                 "editable_text_blocks": editable_text_blocks,
                 "editable_characters": editable_characters,
+                "native_stacked_fraction_spans": native_fraction_spans,
                 "editable_character_coverage": round(coverage, 4),
                 "editable_coverage_threshold": threshold,
                 "editable_coverage_gate": "passed" if coverage_passed else "failed",
@@ -252,6 +302,8 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
                 "image_fallback_blocks": fallback_blocks,
                 "body_image_blocks": [block.block_id for block in body_fallbacks],
                 "body_editability_gate": "passed" if not body_fallbacks else "failed",
+                "talk_label_crop_failures": crop_failures,
+                "answer_blank_orphans": orphan_blanks,
                 "warnings": model.warnings,
                 "static_findings": findings,
                 "conflict_decisions": model.debug_records,
@@ -260,7 +312,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         )
     return {
         "schema_version": 2,
-        "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures and not body_image_failure_pages else "requires_review",
+        "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures and not body_image_failure_pages and not talk_label_crop_failure_pages and not answer_blank_failure_pages else "requires_review",
         "pages": pages,
         "summary": {
             "page_count": len(pages),
@@ -268,6 +320,9 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
             "image_fallback_blocks": total_fallback_blocks,
             "body_image_blocks": total_body_image_blocks,
             "body_image_failure_pages": body_image_failure_pages,
+            "talk_label_crop_failure_pages": talk_label_crop_failure_pages,
+            "answer_blank_failure_pages": answer_blank_failure_pages,
+            "native_stacked_fraction_spans": total_native_fraction_spans,
             "conflict_pages": conflict_pages,
             "overlap_warning_pages": [page["page"] for page in pages if page["overlap_warnings"]],
             "formula_fallback_pages": formula_pages,

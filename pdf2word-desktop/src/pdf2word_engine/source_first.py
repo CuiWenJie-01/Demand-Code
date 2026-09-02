@@ -1096,6 +1096,503 @@ def _normalise_editable_pilot_text(model: PageModel) -> None:
             )
 
 
+_INLINE_CALLOUT_LABEL = re.compile(r"^\s*(指数|解析|答案|提示)[\s　\t]*")
+_INLINE_CALLOUT_HOST_TYPES = {
+    "editable_paragraph",
+    "editable_heading",
+    "editable_option_row",
+    "editable_callout_body",
+}
+
+
+def _callout_prefix(value: str | None) -> tuple[str, str] | None:
+    match = _INLINE_CALLOUT_LABEL.match(value or "")
+    if not match:
+        return None
+    return match.group(1), (value or "")[match.end() :]
+
+
+def _first_row_center(block: PageBlock) -> float:
+    height = max(1.0, block.bbox[3] - block.bbox[1])
+    return block.bbox[1] + min(52.0, height / 2)
+
+
+def _save_transparent_label_crop(
+    image: Image.Image,
+    bbox: tuple[float, float, float, float],
+    destination: Path,
+    *,
+    anchor_y: float | None = None,
+) -> tuple[tuple[float, float, float, float], bool]:
+    """Save a vertically tight pink ``谈`` label with a safe source rim.
+
+    The old badge rectangle cut through magenta pixels and left a large
+    transparent lower margin.  WPS aligns that invisible margin to the line
+    baseline, making the visible label look too high.  The horizontal source
+    reservation remains unchanged; only the vertical boundary follows the
+    actual decoration ink.
+    """
+
+    left, top, right, bottom = (int(round(item)) for item in bbox)
+    left = max(0, left)
+    top = max(0, top)
+    right = min(image.width, max(left + 1, right))
+    bottom = min(image.height, max(top + 1, bottom))
+    search = image.crop((left, top, right, bottom)).convert("RGBA")
+    mask = Image.new("L", search.size, 0)
+    source_pixels = search.load()
+    mask_pixels = mask.load()
+    for y in range(search.height):
+        for x in range(search.width):
+            red, green, blue, _ = source_pixels[x, y]
+            # The narrow search window contains one saturated magenta label.
+            # Black body text must not be retained in this decorative image.
+            if red >= 140 and red - green >= 18 and red - blue >= 7:
+                mask_pixels[x, y] = 255
+    bounds = mask.getbbox()
+    has_pink = bounds is not None
+    if bounds is not None:
+        # Multiple callouts can be in the broad vertical search region.  Keep
+        # the contiguous magenta row band closest to this badge, rather than
+        # using the aggregate mask and accidentally treating the next label as
+        # part of the current one.
+        active_rows = [
+            y for y in range(mask.height)
+            if any(mask_pixels[x, y] for x in range(mask.width))
+        ]
+        bands: list[tuple[int, int]] = []
+        for row in active_rows:
+            if not bands or row - bands[-1][1] > 9:
+                bands.append((row, row))
+            else:
+                bands[-1] = (bands[-1][0], row)
+        anchor = (anchor_y - top) if anchor_y is not None else mask.height / 2
+        ink_top, ink_bottom_inclusive = min(
+            bands,
+            key=lambda item: 0.0 if item[0] <= anchor <= item[1] else min(abs(anchor - item[0]), abs(anchor - item[1])),
+        )
+        ink_bottom = ink_bottom_inclusive + 1
+        rim = 5
+        cropped_top = max(top, top + ink_top - rim)
+        cropped_bottom = min(bottom, top + ink_bottom + rim)
+    else:
+        # Unit fixtures may deliberately use a white source image.  Preserve
+        # semantic testability without treating an empty asset as visual proof.
+        cropped_top, cropped_bottom = top, bottom
+    rgba = image.crop((left, cropped_top, right, cropped_bottom)).convert("RGBA")
+    pixels = rgba.load()
+    for y in range(rgba.height):
+        for x in range(rgba.width):
+            red, green, blue, alpha = pixels[x, y]
+            keep = red >= 140 and red - green >= 18 and red - blue >= 7
+            pixels[x, y] = (red, green, blue, alpha if keep else 0)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    rgba.save(destination, format="PNG")
+    return (float(left), float(cropped_top), float(right), float(cropped_bottom)), has_pink
+
+
+def _bind_answer_blanks_to_question_stems(model: PageModel) -> None:
+    """Bind a sparse source ``（）`` to the final line of its question stem.
+
+    OCR correctly finds each bracket but treats the right-side answer area as a
+    separate paragraph.  That creates the oversized, detached Word row seen in
+    the candidate.  A right tab in the preceding native question paragraph
+    represents the source layout while keeping the brackets editable.
+    """
+
+    blanks = [
+        block
+        for block in model.blocks
+        if not block.asset_path
+        and str(block.style.get("semantic_role", "")) == "answer_blank"
+        and "".join((block.text or "").split()) in {"（", "）", "（）", "()"}
+    ]
+    if not blanks:
+        return
+    opens = sorted(
+        (block for block in blanks if "".join((block.text or "").split()) == "（"),
+        key=lambda item: (item.bbox[1], item.bbox[0]),
+    )
+    closes = sorted(
+        (block for block in blanks if "".join((block.text or "").split()) == "）"),
+        key=lambda item: (item.bbox[1], item.bbox[0]),
+    )
+    combined = [block for block in blanks if "".join((block.text or "").split()) in {"（）", "()"}]
+    pairs: list[tuple[list[PageBlock], tuple[float, float, float, float]]] = []
+    paired_ids: set[str] = set()
+    for opening in opens:
+        center = (opening.bbox[1] + opening.bbox[3]) / 2
+        candidates = [
+            closing
+            for closing in closes
+            if closing.block_id not in paired_ids
+            and closing.bbox[0] > opening.bbox[0]
+            and abs(((closing.bbox[1] + closing.bbox[3]) / 2) - center) <= 32
+        ]
+        if not candidates:
+            continue
+        closing = min(candidates, key=lambda item: (item.bbox[0] - opening.bbox[0], item.bbox[1]))
+        paired_ids.update({opening.block_id, closing.block_id})
+        pairs.append(([opening, closing], _union_bbox([opening, closing])))
+    pairs.extend(([block], block.bbox) for block in combined)
+
+    hosts = [
+        block
+        for block in model.blocks
+        if not block.asset_path
+        and block.block_type in {"editable_paragraph", "editable_heading"}
+        and block.text
+    ]
+    removed: set[str] = set()
+    failures = [block.block_id for block in blanks if block.block_id not in paired_ids and block not in combined]
+    for pair_blocks, pair_bbox in pairs:
+        center = (pair_bbox[1] + pair_bbox[3]) / 2
+        candidates = [
+            host
+            for host in hosts
+            if host.bbox[0] < pair_bbox[0]
+            and host.bbox[1] - 18 <= center <= host.bbox[3] + 32
+            and not host.style.get("answer_blank_bound")
+        ]
+        if not candidates:
+            failures.extend(block.block_id for block in pair_blocks)
+            continue
+        host = min(candidates, key=lambda item: (abs(item.bbox[3] - pair_bbox[3]), abs(item.bbox[2] - pair_bbox[2])))
+        host.text = (host.text or "").rstrip() + "\t（　）"
+        host.bbox = (
+            host.bbox[0],
+            host.bbox[1],
+            max(host.bbox[2], pair_bbox[2] + 8.0),
+            max(host.bbox[3], pair_bbox[3]),
+        )
+        host.style["right_tab_stops_px"] = [round(max(0.0, pair_bbox[2] - host.bbox[0]), 2)]
+        host.style["answer_blank_bound"] = True
+        host.style["answer_blank_source_ids"] = [block.block_id for block in pair_blocks]
+        removed.update(block.block_id for block in pair_blocks)
+        model.debug_records.append(
+            {
+                "action": "bound_answer_blank_to_question_stem",
+                "block_id": host.block_id,
+                "block_type": host.block_type,
+                "source": host.source,
+                "reason": "source blank is a right-aligned final-line token, not an independent paragraph",
+                "related_block_ids": [block.block_id for block in pair_blocks],
+                "bbox": list(pair_bbox),
+                "text_preview": "（　）",
+            }
+        )
+    if failures:
+        raise ValueError(f"第 {model.page_index + 1} 页存在无法并回题干的答题括号：{', '.join(sorted(set(failures)))}")
+    model.blocks = [block for block in model.blocks if block.block_id not in removed]
+
+
+def _source_ink_line_bands(
+    image: Image.Image,
+    bbox: tuple[float, float, float, float],
+    *,
+    max_row_gap_px: int = 22,
+) -> list[tuple[int, int, int, int]]:
+    """Return source-ink bounds for the visual rows inside one OCR paragraph."""
+
+    left = max(0, int(round(bbox[0])))
+    top = max(0, int(round(bbox[1])))
+    right = min(image.width, int(round(bbox[2])))
+    bottom = min(image.height, int(round(bbox[3])))
+    if right <= left or bottom <= top:
+        return []
+    crop = image.crop((left, top, right, bottom)).convert("RGB")
+    pixels = crop.load()
+    # Text here is dark or magenta.  Retain anti-aliased glyph edges while
+    # discarding the white paper background.
+    def has_ink(x: int, y: int) -> bool:
+        red, green, blue = pixels[x, y]
+        return min(red, green, blue) < 218 or max(red, green, blue) - min(red, green, blue) > 44
+
+    active_rows = [y for y in range(crop.height) if any(has_ink(x, y) for x in range(crop.width))]
+    bands: list[tuple[int, int]] = []
+    for row in active_rows:
+        # Fractions contain numerator/bar/denominator islands.  The caller
+        # chooses the widest gap that still yields the known editable row
+        # count, keeping those islands together without merging tight lines.
+        if not bands or row - bands[-1][1] > max_row_gap_px:
+            bands.append((row, row))
+        else:
+            bands[-1] = (bands[-1][0], row)
+    result: list[tuple[int, int, int, int]] = []
+    for band_top, band_bottom in bands:
+        xs = [x for y in range(band_top, band_bottom + 1) for x in range(crop.width) if has_ink(x, y)]
+        if xs:
+            result.append((left + min(xs), top + band_top, left + max(xs) + 1, top + band_bottom + 1))
+    return result
+
+
+def _derive_source_line_layouts(model: PageModel, image: Image.Image) -> None:
+    """Attach a generic per-line source layout plan to editable body text.
+
+    Every multi-line question, analysis, hint or answer paragraph is eligible.
+    The plan tells the Word writer which rows filled the source measure and
+    which final row contains a right-aligned answer blank, so it expands only
+    those rows instead of inserting literal spaces or moving parentheses
+    outside a stem.
+    """
+
+    evidence = {block.block_id: block for block in model.evidence_blocks}
+    inline_labels = {
+        str(block.style.get("inline_host_block_id")): block
+        for block in model.blocks
+        if block.asset_path and block.style.get("inline_decorative") and block.style.get("inline_host_block_id")
+    }
+    page_width = float(model.source_image_width_px or image.width)
+    for block in model.blocks:
+        if block.block_type not in {"editable_paragraph", "editable_callout_body"} or not block.text or block.asset_path:
+            continue
+        lines = block.text.splitlines()
+        if len(lines) < 2:
+            continue
+        # Most rows tolerate the 22 px fraction gap.  Some tightly-set source
+        # fractions have only a four-pixel blank strip between adjacent rows;
+        # progressively tighten the gap until it agrees with the OCR paragraph
+        # line count.  This is geometry-driven, not a question/page exception.
+        bands = []
+        for row_gap in (22, 18, 15, 12, 9, 7, 5, 3):
+            candidate = _source_ink_line_bands(image, block.bbox, max_row_gap_px=row_gap)
+            if len(candidate) == len(lines):
+                bands = candidate
+                break
+        if not bands:
+            bands = _source_ink_line_bands(image, block.bbox)
+        if len(bands) != len(lines):
+            model.debug_records.append(
+                {
+                    "action": "source_line_layout_skipped",
+                    "block_id": block.block_id,
+                    "block_type": block.block_type,
+                    "source": block.source,
+                    "reason": f"source ink yielded {len(bands)} rows for {len(lines)} editable rows",
+                    "related_block_ids": [],
+                    "bbox": list(block.bbox),
+                    "text_preview": (block.text or "")[:80],
+                }
+            )
+            continue
+        blank_left: float | None = None
+        blank_ids = block.style.get("answer_blank_source_ids", [])
+        if isinstance(blank_ids, list):
+            blank_blocks = [evidence[item] for item in blank_ids if item in evidence]
+            if blank_blocks:
+                blank_left = _union_bbox(blank_blocks)[0]
+        layouts: list[dict[str, float | bool]] = []
+        host_right = block.bbox[2]
+        inline_label = inline_labels.get(block.block_id)
+        for index, (left, top, right, bottom) in enumerate(bands):
+            is_last = index == len(bands) - 1
+            text_left = left
+            if index == 0 and inline_label is not None:
+                # The first source row also includes the raster decorative
+                # "谈+标签" asset.  Its editable body begins immediately to
+                # the right of that source asset, and only that body measure
+                # belongs in Word's character-spacing calculation.
+                text_left = max(text_left, int(round(inline_label.bbox[2])))
+            text_right = right
+            if is_last and blank_left is not None:
+                crop_right = max(text_left + 1, int(blank_left) - 3)
+                row_pixels = image.crop((text_left, top, crop_right, bottom)).convert("RGB")
+                ink_x = [
+                    x
+                    for y in range(row_pixels.height)
+                    for x in range(row_pixels.width)
+                    if min(row_pixels.getpixel((x, y))) < 218
+                    or max(row_pixels.getpixel((x, y))) - min(row_pixels.getpixel((x, y))) > 44
+                ]
+                if ink_x:
+                    text_right = text_left + max(ink_x) + 1
+            fills_measure = not is_last and right >= host_right - max(18.0, page_width * 0.018)
+            layouts.append(
+                {
+                    "left_px": float(text_left),
+                    "right_px": float(text_right),
+                    "top_px": float(top),
+                    "bottom_px": float(bottom),
+                    "justify": fills_measure,
+                }
+            )
+        block.style["source_line_layout"] = layouts
+        block.style["source_layout_mode"] = "per_line_source_measure"
+        model.debug_records.append(
+            {
+                "action": "derived_source_line_layout",
+                "block_id": block.block_id,
+                "block_type": block.block_type,
+                "source": block.source,
+                "reason": "per-line source ink geometry retained for native Word body layout",
+                "related_block_ids": list(blank_ids) if isinstance(blank_ids, list) else [],
+                "bbox": list(block.bbox),
+                "text_preview": (block.text or "")[:80],
+            }
+        )
+
+
+def _attach_inline_callout_labels(
+    model: PageModel,
+    image: Image.Image,
+    destination: Path,
+) -> None:
+    """Bind each source ``谈+标签`` decoration to its editable paragraph.
+
+    The previous representation used a foreground VML badge plus an unrelated
+    editable label frame.  Small Word/WPS metric changes could therefore place
+    the badge on top of the label or the next line.  Here the whole short label
+    becomes one transparent source asset and is serialized inline by the Word
+    writer, while every following character remains editable.
+    """
+
+    badges = sorted(
+        (block for block in model.blocks if block.block_type == "talk_badge_image" and block.asset_path),
+        key=lambda item: (item.bbox[1], item.bbox[0]),
+    )
+    editable = [
+        block
+        for block in model.blocks
+        if block.block_type in _INLINE_CALLOUT_HOST_TYPES and block.text and not block.asset_path
+    ]
+    removed_ids: set[str] = set()
+    consumed_hosts: set[str] = set()
+    replacements: list[PageBlock] = []
+    unpaired: list[str] = []
+    page_width = float(model.source_image_width_px or image.width)
+    canonical_body_left = float(round(page_width * 0.1256))
+    label_crop_right = float(round(page_width * 0.2630))
+
+    for index, badge in enumerate(badges, start=1):
+        badge_center = (badge.bbox[1] + badge.bbox[3]) / 2
+        label_candidates: list[tuple[float, PageBlock, str, str]] = []
+        for block in editable:
+            if block.block_id in removed_ids or block.block_id in consumed_hosts:
+                continue
+            parsed = _callout_prefix(block.text)
+            if not parsed:
+                continue
+            distance = abs(_first_row_center(block) - badge_center)
+            if distance <= 82:
+                label_candidates.append((distance, block, parsed[0], parsed[1]))
+        if not label_candidates:
+            unpaired.append(badge.block_id)
+            continue
+
+        _, label_block, label, remainder = min(label_candidates, key=lambda item: item[0])
+        host = label_block
+        if not remainder.strip():
+            body_candidates: list[tuple[float, float, PageBlock]] = []
+            for block in editable:
+                if block.block_id in {label_block.block_id, *removed_ids, *consumed_hosts}:
+                    continue
+                if _callout_prefix(block.text):
+                    continue
+                distance = abs(_first_row_center(block) - badge_center)
+                if distance > 82:
+                    continue
+                # Prefer a body beginning at the normal paragraph edge or a
+                # short answer value immediately to the right of the label.
+                horizontal_penalty = 0.0 if block.bbox[0] <= page_width * 0.30 else 24.0
+                body_candidates.append((distance + horizontal_penalty, block.bbox[0], block))
+            if not body_candidates:
+                unpaired.append(badge.block_id)
+                continue
+            host = min(body_candidates, key=lambda item: (item[0], item[1]))[2]
+            removed_ids.add(label_block.block_id)
+            remainder = host.text or ""
+
+        old_left = host.bbox[0]
+        if host is label_block:
+            host.text = remainder.lstrip("\t　 ")
+        else:
+            host.text = remainder
+        if not (host.text or "").strip():
+            unpaired.append(badge.block_id)
+            continue
+
+        source_crop_bbox = (
+            badge.bbox[0],
+            badge.bbox[1],
+            max(badge.bbox[2], label_crop_right),
+            badge.bbox[3],
+        )
+        crop_search_bbox = (
+            source_crop_bbox[0],
+            max(0.0, badge.bbox[1] - 90.0),
+            source_crop_bbox[2],
+            min(float(image.height), badge.bbox[3] + 220.0),
+        )
+        asset = destination / f"source-first-inline-talk-label-{index}-{label}.png"
+        crop_bbox, has_pink = _save_transparent_label_crop(
+            image,
+            crop_search_bbox,
+            asset,
+            anchor_y=(badge.bbox[1] + badge.bbox[3]) / 2,
+        )
+        if not has_pink:
+            crop_bbox = source_crop_bbox
+        inline = PageBlock(
+            block_id=f"source-first-inline-talk-label-{index}",
+            block_type="talk_label_image",
+            bbox=crop_bbox,
+            z_index=0,
+            reading_order=max(0, host.reading_order - 1),
+            text=label,
+            style={
+                "inline_decorative": True,
+                "inline_host_block_id": host.block_id,
+                "label_text": label,
+                "label_crop_has_pink": has_pink,
+                "label_crop_padding_px": 5,
+            },
+            asset_path=str(asset),
+            source="watermark-cleaned source PDF talk label",
+            selection_reason="谈字徽标和相邻短标签合并为一个行内装饰；后续正文保持可编辑",
+            fallback_mode="talk_label_source_image",
+        )
+        replacements.append(inline)
+        removed_ids.add(badge.block_id)
+        consumed_hosts.add(host.block_id)
+
+        host.bbox = (
+            min(canonical_body_left, host.bbox[0]),
+            min(host.bbox[1], crop_bbox[1]),
+            host.bbox[2],
+            max(host.bbox[3], crop_bbox[3]),
+        )
+        host.block_type = "editable_callout_body" if host.block_type == "editable_heading" else host.block_type
+        host.style["inline_label_block_id"] = inline.block_id
+        host.style["contains_inline_label"] = True
+        host.style["first_line_indent_px"] = max(0.0, badge.bbox[0] - host.bbox[0])
+        host.style["accent_length"] = 0
+        if label == "指数":
+            old_stops = [float(value) for value in host.style.get("tab_stops_px", [])]
+            absolute_second_stop = old_left + max(old_stops, default=page_width * 0.27)
+            host.style["tab_stops_px"] = [max(0.0, absolute_second_stop - host.bbox[0])]
+        elif host.style.get("font_color") == "EF168B":
+            host.style["font_color"] = "222222"
+        host.selection_reason = "editable callout body bound to one inline source talk label"
+        model.debug_records.append(
+            {
+                "action": "combined_inline_callout_label",
+                "block_id": inline.block_id,
+                "block_type": inline.block_type,
+                "source": inline.source,
+                "reason": "removed foreground badge/editable-label split that could cover body text",
+                "related_block_ids": [badge.block_id, label_block.block_id, host.block_id],
+                "bbox": list(crop_bbox),
+                "text_preview": label,
+            }
+        )
+
+    if unpaired:
+        raise ValueError(
+            f"第 {model.page_index + 1} 页谈标签无法绑定到可编辑正文：" + ", ".join(unpaired)
+        )
+    model.blocks = [block for block in model.blocks if block.block_id not in removed_ids] + replacements
+
+
 def _strip_noneditable_body_visuals(model: PageModel) -> None:
     removed = [
         block
@@ -1714,6 +2211,8 @@ def _apply_editable_width_fitting(model: PageModel) -> None:
             continue
         if not block.style.get("justify_to_bbox"):
             continue
+        if block.style.get("source_line_layout"):
+            continue
         try:
             font_pt = float(block.style.get("font_size_pt", 9.6))
         except (TypeError, ValueError):
@@ -1882,10 +2381,13 @@ def apply_source_first_hybrid_policy(
         _merge_editable_paragraphs(model, image)
         if editable_body_only:
             _apply_verified_pilot_repairs(model)
+            _bind_answer_blanks_to_question_stems(model)
             _mark_verified_semantic_tokens(model)
+            _attach_inline_callout_labels(model, image, destination)
+            _derive_source_line_layouts(model, image)
         _apply_editable_width_fitting(model)
         model.warnings.append("此页从源 PDF 新渲染并重新 OCR；未读取旧任务缓存。")
         model.warnings.append("上岸人水印在 OCR 和回退裁图之前已从源渲染中清理。")
         if editable_body_only:
-            model.warnings.append("正文零图片模式：正文、分式、公式、题干和解析均为可编辑 Word 文字；图片仅保留装饰元素。")
+            model.warnings.append("正文零图片模式：正文、分式、公式、题干和解析均为可编辑 Word 内容；分式写为原生 OMML，上述谈标签仅保留行内装饰图。")
     return resolve_page_model_conflicts(model)

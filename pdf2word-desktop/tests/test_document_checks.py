@@ -90,6 +90,49 @@ class DocumentChecksTests(unittest.TestCase):
 
         self.assertGreater(report.legacy_vml_text_boxes, 0)
 
+    def test_structure_report_counts_native_math_and_inline_decoration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            image = root / "talk.png"
+            Image.new("RGBA", (100, 50), (239, 22, 139, 255)).save(image)
+            model = PageModel(
+                schema_version=8,
+                page_index=0,
+                size=PageSize(516, 729),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1032,
+                source_image_height_px=1458,
+                page_class="ordinary_question",
+                blocks=[
+                    PageBlock(
+                        "talk",
+                        "talk_label_image",
+                        (120, 180, 220, 230),
+                        0,
+                        0,
+                        text="解析",
+                        style={"inline_decorative": True, "inline_host_block_id": "body"},
+                        asset_path=str(image),
+                        fallback_mode="talk_label_source_image",
+                    ),
+                    PageBlock(
+                        "body",
+                        "editable_callout_body",
+                        (80, 170, 900, 300),
+                        0,
+                        1,
+                        text="可编辑分数2/5。",
+                        style={"contains_inline_label": True, "first_line_indent_px": 40.0},
+                    ),
+                ],
+            )
+            docx = create_positioned_editable_docx([model], root / "native-math.docx")
+            report = inspect_docx_structure(docx)
+
+        self.assertEqual(report.native_math_fractions, 1)
+        self.assertEqual(report.inline_decorative_images, 1)
+        self.assertEqual(report.fallback_images, 1)
+
     def test_page_count_gate_rejects_unexpected_overflow(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             pdf = Path(temp) / "two-pages.pdf"

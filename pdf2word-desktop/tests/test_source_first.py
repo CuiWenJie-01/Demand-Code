@@ -9,6 +9,8 @@ from PIL import Image, ImageDraw
 from pdf2word_engine.models import PageBlock, PageModel, PageSize, PdfKind
 from pdf2word_engine.quality import assert_body_content_editable, body_image_blocks
 from pdf2word_engine.source_first import (
+    _derive_source_line_layouts,
+    _save_transparent_label_crop,
     apply_region_level_static_fallbacks,
     apply_source_first_hybrid_policy,
     classify_source_page,
@@ -176,12 +178,105 @@ def test_strict_editable_body_keeps_formula_and_callout_text_native(tmp_path: Pa
     editable_text = "".join(block.text or "" for block in result.blocks if not block.asset_path)
     images = [block for block in result.blocks if block.asset_path]
     assert len(images) == 1
-    assert images[0].fallback_mode == "talk_badge_source_image"
-    assert "解析" in editable_text
+    assert images[0].fallback_mode == "talk_label_source_image"
+    assert images[0].text == "解析"
+    assert images[0].style["inline_decorative"] is True
+    assert images[0].style["inline_host_block_id"]
+    assert "解析" not in editable_text
     assert "8x+3y=6300，x=630" in editable_text
     assert "普通解释文字仍然保持可编辑" in editable_text
     assert body_image_blocks(result) == []
     assert_body_content_editable([result])
+
+
+def test_talk_label_crop_uses_magenta_ink_bounds_not_the_badge_box(tmp_path: Path) -> None:
+    source = Image.new("RGB", (320, 260), "white")
+    draw = ImageDraw.Draw(source)
+    # The visible label extends beyond the old 100..160 badge rectangle.
+    draw.rectangle((105, 76, 214, 187), fill=(239, 22, 139))
+    output = tmp_path / "talk.png"
+
+    bbox, has_pink = _save_transparent_label_crop(source, (100, 60, 230, 210), output)
+
+    with Image.open(output) as asset:
+        alpha_bounds = asset.convert("RGBA").getchannel("A").getbbox()
+        assert alpha_bounds is not None
+        left, top, right, bottom = alpha_bounds
+        assert left >= 2 and top >= 2
+        assert right <= asset.width - 2 and bottom <= asset.height - 2
+    assert has_pink is True
+    assert bbox[1] <= 76 and bbox[3] >= 187
+
+
+def test_answer_blank_is_bound_to_question_final_line(tmp_path: Path) -> None:
+    source = tmp_path / "answer-blank.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    model = PageModel(
+        schema_version=8,
+        page_index=8,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("stem", "text_line", (100, 100, 900, 205), 0, 0, confidence=0.99, text="1.题干最后一行在这里"),
+            PageBlock("open", "text_line", (820, 178, 840, 200), 0, 1, confidence=0.99, text="（", style={"semantic_role": "answer_blank"}),
+            PageBlock("close", "text_line", (870, 178, 890, 200), 0, 2, confidence=0.99, text="）", style={"semantic_role": "answer_blank"}),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint="fresh",
+        page_class="ordinary_question",
+        editable_body_only=True,
+    )
+
+    stem = next(block for block in result.blocks if "题干最后一行" in (block.text or ""))
+    assert stem.text is not None and stem.text.endswith("\t（　）")
+    assert stem.style["right_tab_stops_px"] == [790.0]
+    assert not any(str(block.style.get("semantic_role")) == "answer_blank" for block in result.blocks)
+
+
+def test_source_line_layout_is_generic_for_multiline_callout_and_answer_blank() -> None:
+    source = Image.new("RGB", (1000, 500), "white")
+    draw = ImageDraw.Draw(source)
+    # Two source-width rows and a short final row with its answer blank.
+    draw.rectangle((100, 100, 892, 114), fill="black")
+    draw.rectangle((100, 145, 892, 159), fill="black")
+    draw.rectangle((100, 190, 510, 204), fill="black")
+    draw.rectangle((840, 190, 870, 204), fill="black")
+    model = PageModel(
+        schema_version=10,
+        page_index=0,
+        size=PageSize(500, 700),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=500,
+        blocks=[
+            PageBlock(
+                "analysis",
+                "editable_callout_body",
+                (100, 90, 900, 220),
+                0,
+                0,
+                text="解析正文第一行\n解析正文第二行\n解析最后一行\t（　）",
+                style={"answer_blank_source_ids": ["open", "close"]},
+            )
+        ],
+        evidence_blocks=[
+            PageBlock("open", "text_line", (840, 190, 850, 204), 0, 1, text="（"),
+            PageBlock("close", "text_line", (860, 190, 870, 204), 0, 2, text="）"),
+        ],
+    )
+
+    _derive_source_line_layouts(model, source)
+
+    layout = model.blocks[0].style["source_line_layout"]
+    assert [row["justify"] for row in layout] == [True, True, False]
+    assert layout[-1]["right_px"] < 520
 
 
 def test_body_image_gate_rejects_formula_crop_but_accepts_decoration(tmp_path: Path) -> None:

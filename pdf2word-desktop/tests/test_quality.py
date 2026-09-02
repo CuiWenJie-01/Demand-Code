@@ -190,3 +190,39 @@ class QualityTests(unittest.TestCase):
 
         self.assertEqual({block.block_id for block in model.blocks}, {"body", "tag"})
         self.assertFalse(any(item["type"] == "image_text_conflict" for item in editable_quality_report([model])["pages"][0]["static_findings"]))
+
+    def test_inline_callout_label_is_not_reported_as_abnormal_overlap(self) -> None:
+        model = PageModel(
+            schema_version=8,
+            page_index=8,
+            size=PageSize(595, 842),
+            source_type=PdfKind.OUTLINED,
+            blocks=[
+                PageBlock(
+                    "body",
+                    "editable_callout_body",
+                    (100, 100, 900, 300),
+                    0,
+                    0,
+                    confidence=0.99,
+                    text="这是行内标签后面的可编辑解析正文。",
+                ),
+                PageBlock(
+                    "label",
+                    "talk_label_image",
+                    (100, 100, 235, 150),
+                    1,
+                    1,
+                    text="解析",
+                    asset_path="label.png",
+                    fallback_mode="talk_label_source_image",
+                    style={"inline_decorative": True, "inline_host_block_id": "body"},
+                ),
+            ],
+            source_image_width_px=2480,
+            source_image_height_px=3508,
+        )
+
+        findings = editable_quality_report([model])["pages"][0]["static_findings"]
+
+        self.assertEqual(findings, [])

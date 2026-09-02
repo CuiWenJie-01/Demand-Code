@@ -18,7 +18,7 @@ from PIL import Image
 from .models import PAGE_MODEL_SCHEMA_VERSION, PageBlock, PageModel
 
 
-_IMAGE_OWNERS = {"image", "chart", "table", "figure", "formula", "logo", "watermark", "talk_badge_image", "talk_callout_tag_image", "full_page_fallback"}
+_IMAGE_OWNERS = {"image", "chart", "table", "figure", "formula", "logo", "watermark", "talk_badge_image", "talk_callout_tag_image", "talk_label_image", "full_page_fallback"}
 _COMPLEX_FORMULA = re.compile(r"[√∑∫]|(?:[A-Za-z0-9）】]\s*)[=/÷](?:\s*[A-Za-z0-9（【])|\b\d+\s*[+\-]\s*\d+\b")
 _LABEL_RESIDUE = re.compile(r"^\s*(?:谈\s*)?(?:提示|解析|示|析)\s*(?=\S)")
 
@@ -83,9 +83,28 @@ def _strip_callout_residue(block: PageBlock) -> None:
 
 
 def _is_exclusive_owner(block: PageBlock) -> bool:
-    if block.block_type.lower() == "watermark" or block.style.get("render_behind_text"):
+    if (
+        block.block_type.lower() == "watermark"
+        or block.style.get("render_behind_text")
+        or block.style.get("inline_decorative")
+    ):
         return False
     return bool(block.asset_path) and (block.block_type.lower() in _IMAGE_OWNERS or block.fallback_mode is not None)
+
+
+def _is_inline_decoration_host_pair(left: PageBlock, right: PageBlock) -> bool:
+    """Return whether geometry intentionally binds a label to its host paragraph."""
+
+    return bool(
+        (
+            left.style.get("inline_decorative")
+            and left.style.get("inline_host_block_id") == right.block_id
+        )
+        or (
+            right.style.get("inline_decorative")
+            and right.style.get("inline_host_block_id") == left.block_id
+        )
+    )
 
 
 def resolve_page_model_conflicts(model: PageModel) -> PageModel:
@@ -224,6 +243,8 @@ def static_page_checks(model: PageModel) -> list[dict[str, Any]]:
         if left.confidence is not None and left.confidence < 0.85 and left.text and not left.asset_path:
             findings.append({"type": "low_confidence", "blocks": [left.block_id], "detail": f"confidence={left.confidence:.3f}"})
         for right in blocks[index + 1 :]:
+            if _is_inline_decoration_host_pair(left, right):
+                continue
             ratio = overlap_ratio(left, right)
             if ratio < 0.72:
                 continue

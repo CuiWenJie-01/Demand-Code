@@ -10,6 +10,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from .document_checks import assert_source_first_docx_contract
 from .execution import resolve_ocr_execution_profile
 from .job_store import file_sha256
 from .models import PageModel, RenderedPage
@@ -135,6 +136,19 @@ def _validate_current_candidate_directories(output_dir: Path, workspace_dir: Pat
             raise ValueError(f"当前候选目录路径被文件占用：{path}")
 
 
+def _assert_current_candidate_unlocked(output_dir: Path) -> None:
+    """Fail before OCR when Word/WPS still owns the current candidate."""
+
+    if not output_dir.is_dir():
+        return
+    lock_files = sorted(path.name for path in output_dir.glob("~$*.docx"))
+    if lock_files:
+        raise PermissionError(
+            "当前候选仍被 Word/WPS 打开，请先关闭后再重跑；检测到锁文件："
+            + ", ".join(lock_files)
+        )
+
+
 def _promote_current_candidate(
     staging_output: Path,
     current_output: Path,
@@ -187,6 +201,7 @@ def create_current_source_first_pilot(
     current_output = Path(output_dir).expanduser().resolve()
     current_workspace = Path(workspace_dir).expanduser().resolve()
     _validate_current_candidate_directories(current_output, current_workspace)
+    _assert_current_candidate_unlocked(current_output)
     token = uuid.uuid4().hex
     staging_output = current_output.parent / f".{current_output.name}.pending-{token}"
     staging_workspace = current_workspace.parent / f".{current_workspace.name}.pending-{token}"
@@ -372,6 +387,25 @@ def create_source_first_pilot(
     quality_path = destination / f"{source.stem}-第二轮6页可编辑混合样本-质量报告-v2.json"
     create_positioned_editable_docx(models, docx)
     quality = editable_quality_report(models)
+    structure = assert_source_first_docx_contract(docx)
+    expected_native_fractions = quality["summary"]["native_stacked_fraction_spans"]
+    if structure.native_math_fractions != expected_native_fractions:
+        raise ValueError(
+            "原生上下式分数门禁失败："
+            f"PageModel 预期 {expected_native_fractions} 个，DOCX 实际 {structure.native_math_fractions} 个。"
+        )
+    expected_inline_labels = sum(
+        1
+        for model in models
+        for block in model.blocks
+        if block.block_type == "talk_label_image" and block.style.get("inline_decorative")
+    )
+    if structure.inline_decorative_images != expected_inline_labels:
+        raise ValueError(
+            "行内谈标签门禁失败："
+            f"PageModel 预期 {expected_inline_labels} 个，DOCX 实际 {structure.inline_decorative_images} 个。"
+        )
+    quality["docx_structure"] = structure.to_dict()
     quality["source_first"] = {
         "source_pdf": str(source),
         "source_sha256": fingerprint,

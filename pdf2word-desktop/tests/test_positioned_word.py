@@ -135,3 +135,159 @@ class PositionedEditableWordTests(unittest.TestCase):
         width_match = re.search(r'<w:framePr[^>]*w:w="(\d+)"', document_xml)
         self.assertIsNotNone(width_match)
         self.assertGreater(int(width_match.group(1)), 500)
+
+    def test_slash_fractions_are_written_as_editable_stacked_omml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = PageModel(
+                schema_version=8,
+                page_index=0,
+                size=PageSize(500, 700),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1000,
+                source_image_height_px=1400,
+                page_class="ordinary_question",
+                blocks=[
+                    PageBlock(
+                        "fraction-body",
+                        "editable_paragraph",
+                        (100, 200, 900, 320),
+                        0,
+                        0,
+                        text="西区占总人数的2/5，套餐比例为1/(1+3)。",
+                        style={"font_size_pt": 10.0, "line_spacing_pt": 14.0, "line_count": 1},
+                    )
+                ],
+            )
+
+            output = create_positioned_editable_docx([model], root / "fractions.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertEqual(document_xml.count("<m:f>"), 2)
+        self.assertIn('xml:space="preserve">2</m:t>', document_xml)
+        self.assertIn('xml:space="preserve">5</m:t>', document_xml)
+        self.assertIn('xml:space="preserve">1+3</m:t>', document_xml)
+        self.assertIn('w:hRule="atLeast"', document_xml)
+
+    def test_talk_label_is_inline_with_its_editable_body(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            asset = root / "talk-analysis.png"
+            Image.new("RGBA", (120, 54), color=(239, 22, 139, 255)).save(asset)
+            model = PageModel(
+                schema_version=8,
+                page_index=0,
+                size=PageSize(500, 700),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1000,
+                source_image_height_px=1400,
+                page_class="ordinary_question",
+                blocks=[
+                    PageBlock(
+                        "inline-label",
+                        "talk_label_image",
+                        (150, 200, 270, 254),
+                        0,
+                        0,
+                        text="解析",
+                        style={"inline_decorative": True, "inline_host_block_id": "callout"},
+                        asset_path=str(asset),
+                        fallback_mode="talk_label_source_image",
+                    ),
+                    PageBlock(
+                        "callout",
+                        "editable_callout_body",
+                        (100, 190, 900, 330),
+                        0,
+                        1,
+                        text="根据题意，后面的正文必须保持可编辑。",
+                        style={
+                            "contains_inline_label": True,
+                            "first_line_indent_px": 50.0,
+                            "font_size_pt": 10.0,
+                            "line_spacing_pt": 14.0,
+                        },
+                    ),
+                ],
+            )
+
+            output = create_positioned_editable_docx([model], root / "inline-label.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertIn("<wp:inline", document_xml)
+        self.assertIn("后面的正文必须保持可编辑", document_xml)
+        self.assertNotIn("pdf2word_image_inline-label", document_xml)
+        self.assertIn('w:hRule="atLeast"', document_xml)
+        frame_width = re.search(r'<w:framePr[^>]*w:w="(\d+)"', document_xml)
+        self.assertIsNotNone(frame_width)
+        self.assertGreater(int(frame_width.group(1)), 8000)
+        self.assertNotIn('w:position w:val="-8"', document_xml)
+
+    def test_answer_blank_uses_a_right_tab_in_its_native_question_paragraph(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = PageModel(
+                schema_version=9,
+                page_index=0,
+                size=PageSize(500, 700),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1000,
+                source_image_height_px=1400,
+                page_class="ordinary_question",
+                blocks=[
+                    PageBlock(
+                        "question",
+                        "editable_paragraph",
+                        (100, 200, 900, 290),
+                        0,
+                        0,
+                        text="题干最后一行\t（　）",
+                        style={"font_size_pt": 10.0, "line_spacing_pt": 14.0, "right_tab_stops_px": [790.0]},
+                    )
+                ],
+            )
+            output = create_positioned_editable_docx([model], root / "answer-blank.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertIn('w:val="right"', document_xml)
+        self.assertIn("（　）", document_xml)
+
+    def test_source_line_layout_expands_only_full_source_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            model = PageModel(
+                schema_version=10,
+                page_index=0,
+                size=PageSize(500, 700),
+                source_type=PdfKind.OUTLINED,
+                source_image_width_px=1000,
+                source_image_height_px=1400,
+                blocks=[
+                    PageBlock(
+                        "analysis",
+                        "editable_callout_body",
+                        (100, 200, 900, 330),
+                        0,
+                        0,
+                        text="解析正文第一行\n解析正文第二行\n短尾行",
+                        style={
+                            "font_size_pt": 10.0,
+                            "line_spacing_pt": 14.0,
+                            "source_line_layout": [
+                                {"left_px": 100, "right_px": 900, "justify": True},
+                                {"left_px": 100, "right_px": 900, "justify": True},
+                                {"left_px": 100, "right_px": 350, "justify": False},
+                            ],
+                        },
+                    )
+                ],
+            )
+            output = create_positioned_editable_docx([model], root / "source-row-layout.docx")
+            with zipfile.ZipFile(output) as archive:
+                document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertIn('w:spacing w:val="72"', document_xml)
+        self.assertEqual(document_xml.count('w:spacing w:val="72"'), 2)

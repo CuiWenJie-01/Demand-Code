@@ -14,7 +14,14 @@ from pypdf import PdfReader
 
 WORD_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 VML_NAMESPACE = "urn:schemas-microsoft-com:vml"
-NAMESPACES = {"w": WORD_NAMESPACE, "v": VML_NAMESPACE}
+MATH_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+DRAWING_WORD_NAMESPACE = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+NAMESPACES = {
+    "w": WORD_NAMESPACE,
+    "v": VML_NAMESPACE,
+    "m": MATH_NAMESPACE,
+    "wp": DRAWING_WORD_NAMESPACE,
+}
 
 
 class DocumentCheckError(ValueError):
@@ -26,8 +33,10 @@ class DocumentStructureReport:
     docx: Path
     editable_text_characters: int
     native_frame_paragraphs: int
+    native_math_fractions: int
     legacy_vml_text_boxes: int
     fallback_images: int
+    inline_decorative_images: int
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
@@ -50,23 +59,27 @@ def inspect_docx_structure(docx_path: str | Path) -> DocumentStructureReport:
     path = Path(docx_path).expanduser().resolve()
     root = _read_document_xml(path)
     editable_text = "".join(node.text or "" for node in root.findall(".//w:t", NAMESPACES))
+    editable_math = "".join(node.text or "" for node in root.findall(".//m:t", NAMESPACES))
     native_frames = sum(
         1
         for paragraph in root.findall(".//w:p", NAMESPACES)
         if paragraph.find("./w:pPr/w:framePr", NAMESPACES) is not None
     )
     legacy_text_boxes = len(root.findall(".//w:txbxContent", NAMESPACES))
-    fallback_images = sum(
+    positioned_images = sum(
         1
         for shape in root.findall(".//v:shape", NAMESPACES)
         if shape.attrib.get("id", "").startswith("pdf2word_image_")
     )
+    inline_images = len(root.findall(".//wp:inline", NAMESPACES))
     return DocumentStructureReport(
         docx=path,
-        editable_text_characters=len("".join(editable_text.split())),
+        editable_text_characters=len("".join((editable_text + editable_math).split())),
         native_frame_paragraphs=native_frames,
+        native_math_fractions=len(root.findall(".//m:f", NAMESPACES)),
         legacy_vml_text_boxes=legacy_text_boxes,
-        fallback_images=fallback_images,
+        fallback_images=positioned_images + inline_images,
+        inline_decorative_images=inline_images,
     )
 
 
