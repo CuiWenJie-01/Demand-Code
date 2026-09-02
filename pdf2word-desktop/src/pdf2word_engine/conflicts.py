@@ -55,7 +55,13 @@ def _score(block: PageBlock) -> float:
     # Focused OCR is useful only when it is a cleaner/better local candidate;
     # it gets no unconditional privilege over full-page OCR.
     provenance = 0.02 if "focused" in source else 0.01 if "paddle" in source else 0.0
-    residue_penalty = 0.18 if (block.text or "").lstrip().startswith(("示", "析")) else 0.0
+    role = str(block.style.get("semantic_role", ""))
+    residue_penalty = (
+        0.18
+        if role in {"callout_body", "callout_body_fragment"}
+        and (block.text or "").lstrip().startswith(("示", "析"))
+        else 0.0
+    )
     return confidence + provenance - residue_penalty
 
 
@@ -117,31 +123,7 @@ def resolve_page_model_conflicts(model: PageModel) -> PageModel:
     model.schema_version = PAGE_MODEL_SCHEMA_VERSION
     for block in model.blocks:
         block.source = block.source or _source(block)
-        # A narrow running-page box often captures the leading vertical sidebar
-        # character as ``1``.  This book uses three-digit running numbers;
-        # e.g. OCR ``1018`` must be rendered as ``018`` rather than ``101``.
-        digits = (block.text or "").strip()
-        page_height = model.source_image_height_px or model.size.height_pt
-        if block.block_type.lower() == "number" and re.fullmatch(r"1\d{3}", digits) and block.bbox[1] >= page_height * 0.88:
-            block.text = digits[-3:]
-            block.style["semantic_role"] = "sidebar_page_number"
-            block.style.setdefault("font_size_pt", 8.5)
-            block.selection_reason = "removed leading sidebar OCR artifact from three-digit running page number"
-            block.warnings.append("页码 OCR 前置杂字已清理。")
         _strip_callout_residue(block)
-
-    # The pale central ``上岸人`` mark is a reading obstruction rather than
-    # source content.  It is intentionally removed before any ownership or
-    # duplicate analysis, so it can neither cover text nor be reintroduced by
-    # the Word renderer.
-    without_watermarks: list[PageBlock] = []
-    for block in model.blocks:
-        watermark_source = _source(block).lower()
-        if block.block_type.lower() == "watermark" and ("neutral-gray" in watermark_source or "上岸" in watermark_source):
-            _record(model, action="removed", block=block, reason="user-requested removal of 上岸人 watermark")
-            continue
-        without_watermarks.append(block)
-    model.blocks = without_watermarks
 
     owners = [block for block in model.blocks if _is_exclusive_owner(block)]
     retained: list[PageBlock] = []

@@ -751,7 +751,8 @@ def _talk_index_blocks(
     matches = [
         (index, text, bbox, score)
         for index, text, bbox, score in candidates
-        if _candidate_is_in_layout(bbox, layout.bbox) and ("易错指数" in text or "易考指数" in text)
+        if _candidate_is_in_layout(bbox, layout.bbox)
+        and any(label in text for label in CN_EXAM_QUESTION_V1.rating_labels)
     ]
     if not matches:
         return None
@@ -1656,9 +1657,8 @@ def materialize_visual_fallbacks(
         model.source_image_width_px = width
         model.source_image_height_px = height
         _restore_unreadable_sidebar_as_image(model, image, destination)
-        # Do not recreate the large neutral-gray ``上岸人`` layer.  The source-
-        # first workflow removes it before OCR, and keeping a second generic
-        # detector here could reintroduce the very watermark the user rejected.
+        # Watermark handling belongs to the matched source/preprocessing policy.
+        # OCR materialization must not independently add or remove one.
         _restore_callout_ratings_from_source(model, image)
         if not editable_body_only:
             _collapse_formula_fragments_to_image_fallback(model, page_width_px=width)
@@ -1797,116 +1797,6 @@ def _restore_unreadable_sidebar_as_image(model: PageModel, image: Image.Image, d
         )
     )
     model.blocks = retained
-
-
-def _restore_neutral_gray_watermark(model: PageModel, image: Image.Image, destination: Path) -> None:
-    """Preserve a large central, pale neutral watermark missed by layout OCR.
-
-    PP-StructureV3 commonly omits the source workbook's translucent diagonal
-    watermark because it is intentionally low contrast.  Rendering the entire
-    crop would duplicate the editable text above it, so retain only its nearly
-    neutral gray pixels in an RGBA asset.  The geometric thresholds make this a
-    conservative fallback rather than a generic light-gray diagram detector.
-    """
-
-    if any(block.block_type.lower() == "watermark" for block in model.blocks):
-        return
-    width, height = image.size
-    left, top = round(width * 0.22), round(height * 0.32)
-    right, bottom = round(width * 0.82), round(height * 0.75)
-    if right <= left or bottom <= top:
-        return
-    crop = image.crop((left, top, right, bottom))
-    pixels = crop.load()
-    neutral_counts: Counter[tuple[int, int, int]] = Counter()
-    for y in range(crop.height):
-        for x in range(crop.width):
-            red, green, blue = pixels[x, y]
-            if max(red, green, blue) - min(red, green, blue) <= 2 and 215 <= (red + green + blue) / 3 <= 238:
-                neutral_counts[(red, green, blue)] += 1
-    if not neutral_counts:
-        return
-    watermark_color, color_count = neutral_counts.most_common(1)[0]
-    if color_count < max(800, crop.width * crop.height // 250):
-        return
-    # Do not retain a range of pale grays: antialiased black text also has
-    # those colors.  The watermark's large solid fill is the dominant exact
-    # neutral color in the central window, so extracting that color alone
-    # preserves the mark without ghosting editable prose.
-    matches = [
-        (x, y)
-        for y in range(crop.height)
-        for x in range(crop.width)
-        if pixels[x, y] == watermark_color
-    ]
-    # Exact-color antialiasing can still occur on source text.  A watermark is
-    # made from broad connected strokes, unlike those tiny isolated fragments.
-    # Keep only substantial four-connected components before creating the
-    # transparent layer.
-    remaining = set(matches)
-    retained: list[tuple[int, int]] = []
-    minimum_component = max(500, crop.width * crop.height // 10_000)
-    while remaining:
-        start = remaining.pop()
-        component = [start]
-        frontier = [start]
-        while frontier:
-            x, y = frontier.pop()
-            for neighbor in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                if neighbor in remaining:
-                    remaining.remove(neighbor)
-                    component.append(neighbor)
-                    frontier.append(neighbor)
-        if len(component) >= minimum_component:
-            retained.extend(component)
-    # The source watermark sits behind rasterized text.  Once Word redraws the
-    # editable text, sub-pixel font metrics differ slightly and the old
-    # watermark pixels can peek out as gray speckles beside glyphs.  Remove a
-    # narrow halo around the source's dark text; the new editable glyphs cover
-    # those gaps while the watermark remains visible in the surrounding space.
-    def is_near_source_text(x: int, y: int) -> bool:
-        for nearby_y in range(max(0, y - 3), min(crop.height, y + 4)):
-            for nearby_x in range(max(0, x - 3), min(crop.width, x + 4)):
-                red, green, blue = pixels[nearby_x, nearby_y]
-                if (red + green + blue) / 3 < 180:
-                    return True
-        return False
-
-    matches = [(x, y) for x, y in retained if not is_near_source_text(x, y)]
-    if len(matches) < max(800, crop.width * crop.height // 250):
-        return
-    min_x = min(x for x, _ in matches)
-    max_x = max(x for x, _ in matches)
-    min_y = min(y for _, y in matches)
-    max_y = max(y for _, y in matches)
-    if max_x - min_x < width * 0.25 or max_y - min_y < height * 0.20:
-        return
-
-    # Add a small transparent safety edge so antialiased watermark outlines do
-    # not get visibly clipped when Word places the image at its source bounds.
-    margin = 2
-    min_x, min_y = max(0, min_x - margin), max(0, min_y - margin)
-    max_x, max_y = min(crop.width - 1, max_x + margin), min(crop.height - 1, max_y + margin)
-    watermark = Image.new("RGBA", (max_x - min_x + 1, max_y - min_y + 1), (255, 255, 255, 0))
-    output = watermark.load()
-    for x, y in matches:
-        if min_x <= x <= max_x and min_y <= y <= max_y:
-            red, green, blue = pixels[x, y]
-            output[x - min_x, y - min_y] = (red, green, blue, 255)
-    destination.mkdir(parents=True, exist_ok=True)
-    asset = destination / "source-watermark.png"
-    watermark.save(asset, format="PNG")
-    model.blocks.append(
-        PageBlock(
-            block_id="source-watermark",
-            block_type="watermark",
-            bbox=(float(left + min_x), float(top + min_y), float(left + max_x + 1), float(top + max_y + 1)),
-            z_index=-1,
-            reading_order=-1,
-            style={"source": "neutral-gray central watermark", "render_behind_text": True},
-            asset_path=str(asset),
-        )
-    )
 
 
 def _recover_fragmented_text_tails(

@@ -9,9 +9,28 @@ from PIL import Image
 from pdf2word_engine.models import PageBlock, PageModel, PageSize, PdfKind
 from pdf2word_engine.conflicts import resolve_page_model_conflicts
 from pdf2word_engine.quality import character_error_rate, compare_rasters, editable_quality_report, normalize_cer_text
+from pdf2word_engine.quality_policies import EditableCoveragePolicy
 
 
 class QualityTests(unittest.TestCase):
+    def test_editable_coverage_threshold_is_a_versioned_policy(self) -> None:
+        model = PageModel(
+            schema_version=1,
+            page_index=0,
+            size=PageSize(595, 842),
+            source_type=PdfKind.OUTLINED,
+            page_class="new_content_type",
+            evidence_blocks=[PageBlock("evidence", "text_line", (0, 0, 10, 10), 0, 0, text="十个字符的来源证据")],
+            blocks=[PageBlock("text", "text_line", (0, 0, 10, 10), 0, 0, text="部分")],
+        )
+        strict = EditableCoveragePolicy(policy_id="test_strict", default_threshold=0.90)
+
+        report = editable_quality_report([model], coverage_policy=strict)
+
+        self.assertEqual(report["coverage_policy_id"], "test_strict")
+        self.assertEqual(report["pages"][0]["editable_coverage_threshold"], 0.90)
+        self.assertEqual(report["pages"][0]["editable_coverage_gate"], "failed")
+
     def test_editable_quality_report_identifies_fallbacks_without_text(self) -> None:
         report = editable_quality_report(
             [
@@ -88,7 +107,7 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(report["summary"]["conflict_pages"], [])
         self.assertEqual(report["summary"]["formula_fallback_pages"], [23])
 
-    def test_conflict_resolver_removes_the_named_source_watermark(self) -> None:
+    def test_generic_conflict_resolver_preserves_unconfigured_watermark(self) -> None:
         model = PageModel(
             schema_version=5,
             page_index=1,
@@ -102,8 +121,7 @@ class QualityTests(unittest.TestCase):
 
         resolve_page_model_conflicts(model)
 
-        self.assertEqual([block.block_id for block in model.blocks], ["body"])
-        self.assertTrue(any(item["block_id"] == "source-watermark" for item in model.debug_records))
+        self.assertEqual([block.block_id for block in model.blocks], ["body", "source-watermark"])
 
     def test_formula_heavy_callout_crop_is_reported_as_formula_fallback(self) -> None:
         model = PageModel(

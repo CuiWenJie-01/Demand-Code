@@ -1,0 +1,122 @@
+{
+  "profile_id": "banyuetan_xingce_1000_part2_v1",
+  "version": 1,
+  "match": {
+    "sha256": "87a6f8015987906bf690f3a5a0a2a0a660f762c63b69c8ca74cf970b3a19e1b0",
+    "page_count": 381
+  },
+  "style_reference_pages": [7, 8, 9, 10, 21, 23],
+  "extra_review_pages": [7, 21, 23],
+  "page_class_overrides": {
+    "1": "cover",
+    "3": "cover",
+    "4": "table_of_contents",
+    "5": "table_of_contents",
+    "6": "section_divider",
+    "7": "chapter_opener",
+    "21": "formula_heavy",
+    "23": "chapter_opener"
+  },
+  "editable_repair_set": "banyuetan_pilot_verified_v1",
+  "raster_cleanup_policy": "central_neutral_gray_v1",
+  "remove_detected_watermark_blocks": true,
+  "toc_pages": [
+    {
+      "physical_page": 4,
+      "top_decoration_bottom": 0.395,
+      "groups": [
+        {
+          "title": "第三部分　数量关系",
+          "title_box": [0.36, 0.4, 0.69, 0.438],
+          "entry_left": 0.19,
+          "entry_right": 0.84,
+          "entry_start_top": 0.453,
+          "entry_step": 0.03165,
+          "entry_height": 0.022,
+          "entries": [
+            {"chapter": "第一章", "title": "解题方法", "printed_page": "002", "physical_page": 7},
+            {"chapter": "第二章", "title": "工程问题", "printed_page": "018", "physical_page": 23},
+            {"chapter": "第三章", "title": "行程问题", "printed_page": "029", "physical_page": 34},
+            {"chapter": "第四章", "title": "经济利润问题", "printed_page": "041", "physical_page": 46},
+            {"chapter": "第五章", "title": "容斥原理", "printed_page": "062", "physical_page": 67},
+            {"chapter": "第六章", "title": "排列组合问题", "printed_page": "065", "physical_page": 70},
+            {"chapter": "第七章", "title": "概率问题", "printed_page": "071", "physical_page": 76},
+            {"chapter": "第八章", "title": "最值问题", "printed_page": "076", "physical_page": 81},
+            {"chapter": "第九章", "title": "几何问题", "printed_page": "084", "physical_page": 89},
+            {"chapter": "第十章", "title": "趣味杂题", "printed_page": "091", "physical_page": 96}
+          ]
+        },
+        {
+          "title": "第四部分　判断推理",
+          "title_box": [0.36, 0.792, 0.69, 0.83],
+          "entry_left": 0.19,
+          "entry_right": 0.84,
+          "entry_start_top": 0.846,
+          "entry_step": 0.0318,
+          "entry_height": 0.022,
+          "entries": [
+            {"chapter": "第一章", "title": "图形推理", "printed_page": "106", "physical_page": 111},
+            {"chapter": "第二章", "title": "定义判断", "printed_page": "141", "physical_page": 146}
+          ]
+        }
+      ]
+    },
+    {
+      "physical_page": 5,
+      "top_decoration_bottom": 0.105,
+      "groups": [
+        {
+          "title": "",
+          "title_box": null,
+          "entry_left": 0.18,
+          "entry_right": 0.83,
+          "entry_start_top": 0.126,
+          "entry_step": 0.0317,
+          "entry_height": 0.022,
+          "entries": [
+            {"chapter": "第三章", "title": "类比推理", "printed_page": "182", "physical_page": 187},
+            {"chapter": "第四章", "title": "逻辑判断", "printed_page": "208", "physical_page": 213}
+          ]
+        },
+        {
+          "title": "第五部分　资料分析",
+          "title_box": [0.35, 0.218, 0.68, 0.256],
+          "entry_left": 0.18,
+          "entry_right": 0.83,
+          "entry_start_top": 0.268,
+          "entry_step": 0.0317,
+          "entry_height": 0.022,
+          "entries": [
+            {"chapter": "第一章", "title": "文字材料", "printed_page": "248", "physical_page": 253},
+            {"chapter": "第二章", "title": "图形材料", "printed_page": "276", "physical_page": 281},
+            {"chapter": "第三章", "title": "表格材料", "printed_page": "293", "physical_page": 298},
+            {"chapter": "第四章", "title": "综合性材料", "printed_page": "312", "physical_page": 317}
+          ]
+        }
+      ]
+    }
+  ],
+  "editable_repairs": [
+    {"physical_page": 7, "block_id": "verified-index-7-1", "bbox": [438, 1225, 1415, 1321], "text": "指数\t易错指数★★★★☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 7, "block_id": "verified-index-7-2", "bbox": [438, 2462, 1415, 2558], "text": "指数\t易错指数★★★★★\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 8, "block_id": "verified-index-8-1", "bbox": [438, 1311, 1415, 1407], "text": "指数\t易错指数★★★★☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 8, "block_id": "verified-index-8-2", "bbox": [438, 2470, 1415, 2566], "text": "指数\t易错指数★★★☆☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 9, "block_id": "verified-index-9-1", "bbox": [438, 887, 1415, 983], "text": "指数\t易错指数★★★☆☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 9, "block_id": "verified-index-9-2", "bbox": [438, 2011, 1415, 2107], "text": "指数\t易错指数★★★★☆\t易考指数★★★★★", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 10, "block_id": "verified-index-10-1", "bbox": [438, 693, 1415, 789], "text": "指数\t易错指数★★★★★\t易考指数★★★★★", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 10, "block_id": "verified-index-10-2", "bbox": [438, 1882, 1415, 1978], "text": "指数\t易错指数★★★★★\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 21, "block_id": "verified-index-21-1", "bbox": [438, 1012, 1415, 1108], "text": "指数\t易错指数★★★☆☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 21, "block_id": "verified-index-21-2", "bbox": [438, 2106, 1415, 2202], "text": "指数\t易错指数★★★☆☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 23, "block_id": "verified-index-23-1", "bbox": [438, 1138, 1415, 1234], "text": "指数\t易错指数★★★☆☆\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 23, "block_id": "verified-index-23-2", "bbox": [438, 2209, 1415, 2305], "text": "指数\t易错指数★★★★★\t易考指数★★★★☆", "block_type": "editable_option_row", "tab_stops_px": [132, 582], "font_color": "EF168B"},
+    {"physical_page": 7, "block_id": "verified-page-7-question-1", "bbox": [270, 738, 1998, 1118], "text": "1.（2018年广东省考）某市服务行业举行业务技能大赛，其中东区参赛人数占总人数的\n1/5，西区参赛人数占总人数的2/5，南区参赛人数占总人数的1/4，其余的是北区的参赛人员。结\n果东区参赛人数的1/3获奖，西区参赛人数的1/12获奖，南区参赛人数的1/9获奖。已知参赛总人\n数超过100人，不到200人，则参赛总人数为", "first_line_indent_px": 80, "accent_length": 13},
+    {"physical_page": 7, "block_id": "verified-page-7-analysis-1", "bbox": [270, 1306, 1998, 1738], "text": "解析　根据题意，东区参赛人数占总人数的1/5，有1/3获奖，可知东区获奖人数占总\n人数的1/15。西区参赛人数占总人数的2/5，有1/12获奖，可知西区获奖人数占总人数的1/30。南\n区参赛人数占总人数的1/4，有1/9获奖，可知南区获奖人数占总人数的1/36。\n总人数大于100，小于200，且是30和36的公倍数。四个选项中，只有D项符合。", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2},
+    {"physical_page": 7, "block_id": "verified-page-7-analysis-2", "bbox": [270, 2572, 1998, 2852], "text": "解析　根据“生产人员与非生产人员的人数之比为4：5，而研发与非研发人员的\n人数之比为3：5”可知，总人数能够被9整除，也能被8整除，是8和9的公倍数，且在\n100到200之间，可求得总人数为144人。生产人数为总数的4/9，研发人数为总数的3/8，且", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2},
+    {"physical_page": 8, "block_id": "verified-page-8-continuation", "bbox": [270, 298, 1998, 548], "text": "两者没有交集。不在生产和研发两类岗位上的职工占总人数的（1-4/9-3/8）=13/72，即共有\n144×13/72=26人。"},
+    {"physical_page": 8, "block_id": "verified-page-8-question-4", "bbox": [270, 2165, 1998, 2368], "text": "4.（2018年福建事业）某代表队参加文艺会演的共46人，其中女生人数的4/5是男生人数\n的3/2，那么参加演出的女生人数为多少人？", "first_line_indent_px": 80, "accent_length": 13},
+    {"physical_page": 8, "block_id": "verified-page-8-analysis-4", "bbox": [270, 2560, 1998, 2755], "text": "解析　根据题意可知，女生人数的4/5是男生人数的3/2，即女生人数是5的倍数，四\n个选项中只有A项符合。", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2},
+    {"physical_page": 21, "block_id": "verified-page-21-analysis-30", "bbox": [270, 1112, 1998, 1485], "text": "解析　根据题意，6月份前两天用去的流量为套餐总流量的1/(1+3)×100%=1/4×100%\n=25%。因2日用去的流量为8MB，是套餐总流量的25%-15%=10%，套餐总流量为\n8÷10%=80MB。如小张从3日开始，每天使用6MB流量，共计使用流量6×（30-2）\n=168MB。超出套餐的流量为168+25%×80-80=108MB。", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2},
+    {"physical_page": 23, "block_id": "verified-page-23-analysis-1", "bbox": [270, 1260, 1998, 1492], "text": "解析　根据题意，设一号车间、二号车间每天分别组装x辆、y辆自行车。那么，\n8x+3y=6300，6x+6y=6300，通过计算可得出x=630，y=420。一号车间每天比二号车间多组\n装630-420=210辆自行车。", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2},
+    {"physical_page": 23, "block_id": "verified-page-23-analysis-2", "bbox": [270, 2328, 1998, 2658], "text": "解析　根据题意，假设改进前甲乙两种产品的日产量分别为3a、2a，单件生产能耗\n分别为x、y。乙产品单件生产能耗降低20%后，变为80%y，甲和乙两种产品的总能耗降低了\n10%，即2a×80%y+3ax=（1-10%）（3ax+2axy），计算可得x：y=2：3。改进后甲、乙两\n种产品的单件生产能耗之比为x：80%y=2：（3×80%）=5：6。", "block_type": "editable_callout_body", "first_line_indent_px": 170, "accent_length": 2}
+  ]
+}

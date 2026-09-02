@@ -21,6 +21,7 @@ class EducationQuestionLayoutProfile:
     # the usual ``4.（来源）`` form. Both are a pink/bold numbered prefix.
     question_heading_pattern: re.Pattern[str] = re.compile(r"^\s*(?P<number>\d{1,3}[.．、])(?:\s*（[^）]+）)?")
     callout_labels: tuple[str, ...] = ("解析", "答案", "提示")
+    rating_labels: tuple[str, ...] = ("易错指数", "易考指数")
     answer_pair_gap_px: float = 54.0
     talk_badge_width_px: float = 62.0
     callout_tag_width_px: float = 96.0

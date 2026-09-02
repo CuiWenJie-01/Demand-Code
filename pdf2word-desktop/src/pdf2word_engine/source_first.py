@@ -1,4 +1,4 @@
-"""Source-first reconstruction policies for the 半月谈 workbook.
+"""Source-first reconstruction algorithms for outlined Chinese workbooks.
 
 The source PDF is an outlined InDesign export: it has no usable text layer and
 therefore cannot be treated as a normal reflow conversion.  This module makes
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections import Counter, deque
 from copy import deepcopy
-from dataclasses import dataclass
 from pathlib import Path
 import re
 from statistics import fmean, median
@@ -20,13 +19,9 @@ import unicodedata
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .conflicts import force_full_page_fallback, intersection_area, resolve_page_model_conflicts, static_page_checks
+from .document_profiles import SourceDocumentProfile, TocEntrySpec
 from .models import PAGE_MODEL_SCHEMA_VERSION, PageBlock, PageModel, PageSize, PdfKind
 from .quality import is_allowed_decorative_image
-
-
-# Second-round editability gate: physical pages 7, 8, 9, 10, 21 and 23.
-PILOT_PAGE_INDICES = (6, 7, 8, 9, 20, 22)
-_VERIFIED_PILOT_SOURCE_SHA256 = "87a6f8015987906bf690f3a5a0a2a0a660f762c63b69c8ca74cf970b3a19e1b0"
 
 
 def write_pdf_without_tagged_watermarks(
@@ -37,10 +32,10 @@ def write_pdf_without_tagged_watermarks(
 ) -> dict[str, object]:
     """Clone a PDF while omitting only XObjects tagged as watermarks.
 
-    The source InDesign export marks the recurring ``上岸人`` artwork as a
-    PDF ``/Artifact`` whose ``/Subtype`` is ``/Watermark``.  Removing its
-    ``Do`` invocation at the content-stream level preserves every underlying
-    vector path, including text that a raster colour mask would damage.
+    The tagged-watermark path omits only PDF ``/Artifact`` objects whose
+    ``/Subtype`` is ``/Watermark``.  Removing their ``Do`` invocation at the
+    content-stream level preserves every underlying vector path, including
+    content that a raster colour mask could damage.
     """
 
     from pypdf import PdfReader, PdfWriter
@@ -108,65 +103,6 @@ def write_pdf_without_tagged_watermarks(
     }
 
 
-@dataclass(frozen=True, slots=True)
-class TocEntry:
-    chapter: str
-    title: str
-    printed_page: str
-    physical_page: int
-
-
-@dataclass(frozen=True, slots=True)
-class TocGroup:
-    title: str
-    entries: tuple[TocEntry, ...]
-
-
-TOC_PAGE_4 = (
-    TocGroup(
-        "第三部分　数量关系",
-        (
-            TocEntry("第一章", "解题方法", "002", 7),
-            TocEntry("第二章", "工程问题", "018", 23),
-            TocEntry("第三章", "行程问题", "029", 34),
-            TocEntry("第四章", "经济利润问题", "041", 46),
-            TocEntry("第五章", "容斥原理", "062", 67),
-            TocEntry("第六章", "排列组合问题", "065", 70),
-            TocEntry("第七章", "概率问题", "071", 76),
-            TocEntry("第八章", "最值问题", "076", 81),
-            TocEntry("第九章", "几何问题", "084", 89),
-            TocEntry("第十章", "趣味杂题", "091", 96),
-        ),
-    ),
-    TocGroup(
-        "第四部分　判断推理",
-        (
-            TocEntry("第一章", "图形推理", "106", 111),
-            TocEntry("第二章", "定义判断", "141", 146),
-        ),
-    ),
-)
-
-TOC_PAGE_5 = (
-    TocGroup(
-        "",
-        (
-            TocEntry("第三章", "类比推理", "182", 187),
-            TocEntry("第四章", "逻辑判断", "208", 213),
-        ),
-    ),
-    TocGroup(
-        "第五部分　资料分析",
-        (
-            TocEntry("第一章", "文字材料", "248", 253),
-            TocEntry("第二章", "图形材料", "276", 281),
-            TocEntry("第三章", "表格材料", "293", 298),
-            TocEntry("第四章", "综合性材料", "312", 317),
-        ),
-    ),
-)
-
-
 def _bbox_area(box: tuple[float, float, float, float]) -> float:
     return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
 
@@ -176,33 +112,33 @@ def _overlap_fraction(left: PageBlock, right: PageBlock) -> float:
     return intersection_area(left.bbox, right.bbox) / area if area else 0.0
 
 
-def classify_source_page(page_index: int, image: Image.Image) -> str:
-    """Return the source-first page class for this outlined workbook.
+def classify_source_page(
+    page_index: int,
+    image: Image.Image,
+    *,
+    source_profile: SourceDocumentProfile | None = None,
+) -> str:
+    """Return a visual class plus an optional exact-source profile override.
 
-    Front matter is intentionally routed by physical position because those
-    pages are publishing artefacts rather than ordinary OCR documents.  The
-    blank-page check remains visual so the classification is auditable.
+    Blank detection is generic and always evaluated from the current page.
+    Physical-position assertions are permitted only through a profile already
+    matched to the source SHA-256 and page count.  An unknown PDF therefore
+    never inherits another book's fixed page map.
     """
 
     grayscale = image.convert("L").resize((128, 181), Image.Resampling.BILINEAR)
     ink = sum(1 for value in grayscale.getdata() if value < 247)
     if ink / (grayscale.width * grayscale.height) < 0.0007:
         return "blank"
-    if page_index in {0, 2}:
-        return "cover"
-    if page_index in {3, 4}:
-        return "table_of_contents"
-    if page_index == 5:
-        return "section_divider"
-    if page_index in {6, 22}:
-        return "chapter_opener"
-    if page_index == 20:
-        return "formula_heavy"
+    if source_profile is not None:
+        override = source_profile.page_class_for(page_index)
+        if override is not None:
+            return override
     return "ordinary_question"
 
 
-def remove_shanganren_watermark(image: Image.Image) -> tuple[Image.Image, dict[str, object]]:
-    """Remove the recurring pale neutral-gray ``上岸人`` source watermark.
+def remove_central_neutral_gray_watermark(image: Image.Image) -> tuple[Image.Image, dict[str, object]]:
+    """Remove a large central neutral-gray watermark selected by profile policy.
 
     The detector uses a large central connected component of the dominant
     exact neutral gray, then removes only nearby neutral antialias pixels.  Dark
@@ -304,11 +240,24 @@ def remove_shanganren_watermark(image: Image.Image) -> tuple[Image.Image, dict[s
     }
 
 
-def prepare_clean_source_image(source_path: str | Path, output_path: str | Path) -> dict[str, object]:
+def prepare_clean_source_image(
+    source_path: str | Path,
+    output_path: str | Path,
+    *,
+    source_fingerprint: str,
+    source_profile: SourceDocumentProfile | None = None,
+) -> dict[str, object]:
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(source_path) as opened:
-        cleaned, report = remove_shanganren_watermark(opened)
+        if source_profile is not None and source_fingerprint != source_profile.source_sha256:
+            raise ValueError("栅格清理配置与当前源 PDF 指纹不匹配。")
+        if source_profile is not None and source_profile.raster_cleanup_policy == "central_neutral_gray_v1":
+            cleaned, report = remove_central_neutral_gray_watermark(opened)
+            report["policy_id"] = source_profile.raster_cleanup_policy
+        else:
+            cleaned = opened.convert("RGB")
+            report = {"removed": False, "policy_id": "none", "reason": "no matched raster cleanup policy"}
         cleaned.save(destination, format="PNG", optimize=True, compress_level=6)
     return report
 
@@ -429,7 +378,7 @@ def _toc_entry_block(
     image: Image.Image,
     *,
     block_id: str,
-    entry: TocEntry,
+    entry: TocEntrySpec,
     box: tuple[float, float, float, float],
     reading_order: int,
     available_pages: set[int],
@@ -467,8 +416,15 @@ def toc_page_model(
     region_directory: str | Path,
     source_fingerprint: str,
     available_pages: Iterable[int],
+    source_profile: SourceDocumentProfile,
 ) -> PageModel:
-    """Create an editable magenta TOC over a source-faithful decoration layer."""
+    """Create an editable TOC from data in an exact-source profile."""
+
+    if source_fingerprint != source_profile.source_sha256:
+        raise ValueError("目录配置与当前源 PDF 指纹不匹配。")
+    toc_spec = source_profile.toc_page_for(page_index)
+    if toc_spec is None:
+        raise ValueError(f"源文档配置没有物理页 {page_index + 1} 的目录转写。")
 
     destination = Path(region_directory)
     destination.mkdir(parents=True, exist_ok=True)
@@ -486,7 +442,7 @@ def toc_page_model(
         # background.  Normal Word TOC paragraphs then remain on the document
         # text layer and cannot be hidden by VML stacking differences between
         # Microsoft Word and LibreOffice.
-        top_bottom = 0.395 if page_index == 3 else 0.105
+        top_bottom = toc_spec.top_decoration_bottom
         for block_id, normalized_box in (
             ("toc-source-decoration-top", (0.0, 0.0, 1.0, top_bottom)),
             ("toc-source-decoration-footer", (0.0, 0.915, 1.0, 1.0)),
@@ -514,29 +470,30 @@ def toc_page_model(
             )
         available = set(available_pages)
         order = 0
-        if page_index == 3:
-            model.blocks.append(_toc_group_block(image, block_id="toc-group-3", text=TOC_PAGE_4[0].title, box=(0.36, 0.400, 0.69, 0.438), reading_order=order))
-            order += 1
-            for index, entry in enumerate(TOC_PAGE_4[0].entries):
-                top = 0.453 + index * 0.03165
-                model.blocks.append(_toc_entry_block(image, block_id=f"toc-entry-3-{index + 1}", entry=entry, box=(0.19, top, 0.84, top + 0.022), reading_order=order, available_pages=available))
+        for group_index, group in enumerate(toc_spec.groups, start=1):
+            if group.title_box is not None:
+                model.blocks.append(
+                    _toc_group_block(
+                        image,
+                        block_id=f"toc-group-{page_index + 1}-{group_index}",
+                        text=group.title,
+                        box=group.title_box,
+                        reading_order=order,
+                    )
+                )
                 order += 1
-            model.blocks.append(_toc_group_block(image, block_id="toc-group-4", text=TOC_PAGE_4[1].title, box=(0.36, 0.792, 0.69, 0.830), reading_order=order))
-            order += 1
-            for index, entry in enumerate(TOC_PAGE_4[1].entries):
-                top = 0.846 + index * 0.0318
-                model.blocks.append(_toc_entry_block(image, block_id=f"toc-entry-4-{index + 1}", entry=entry, box=(0.19, top, 0.84, top + 0.022), reading_order=order, available_pages=available))
-                order += 1
-        else:
-            for index, entry in enumerate(TOC_PAGE_5[0].entries):
-                top = 0.126 + index * 0.0317
-                model.blocks.append(_toc_entry_block(image, block_id=f"toc-entry-4c-{index + 1}", entry=entry, box=(0.18, top, 0.83, top + 0.022), reading_order=order, available_pages=available))
-                order += 1
-            model.blocks.append(_toc_group_block(image, block_id="toc-group-5", text=TOC_PAGE_5[1].title, box=(0.35, 0.218, 0.68, 0.256), reading_order=order))
-            order += 1
-            for index, entry in enumerate(TOC_PAGE_5[1].entries):
-                top = 0.268 + index * 0.0317
-                model.blocks.append(_toc_entry_block(image, block_id=f"toc-entry-5-{index + 1}", entry=entry, box=(0.18, top, 0.83, top + 0.022), reading_order=order, available_pages=available))
+            for entry_index, entry in enumerate(group.entries, start=1):
+                top = group.entry_start_top + (entry_index - 1) * group.entry_step
+                model.blocks.append(
+                    _toc_entry_block(
+                        image,
+                        block_id=f"toc-entry-{page_index + 1}-{group_index}-{entry_index}",
+                        entry=entry,
+                        box=(group.entry_left, top, group.entry_right, top + group.entry_height),
+                        reading_order=order,
+                        available_pages=available,
+                    )
+                )
                 order += 1
         model.warnings.append("目录装饰来自源页；目录组、章节名、点引导线和页码为可编辑 Word 结构。")
         return resolve_page_model_conflicts(model)
@@ -974,19 +931,6 @@ def _replace_talk_prefixes(model: PageModel, image: Image.Image, destination: Pa
 _QUESTION_START = re.compile(r"^\s*\d{1,3}\s*[.．、]")
 _OPTION_START = re.compile(r"^\s*[A-HＡ-Ｈ]\s*[.．、:]", re.IGNORECASE)
 _EDITABLE_LINE_TYPES = {"text_line", "paragraph_title", "header", "number"}
-
-
-@dataclass(frozen=True, slots=True)
-class _VerifiedEditableRepair:
-    page_index: int
-    block_id: str
-    bbox: tuple[float, float, float, float]
-    text: str
-    block_type: str = "editable_paragraph"
-    first_line_indent_px: float = 0.0
-    tab_stops_px: tuple[float, ...] = ()
-    accent_length: int = 0
-    font_color: str = "222222"
 
 
 def _talk_badge_candidate(model: PageModel, block: PageBlock) -> bool:
@@ -1618,135 +1562,16 @@ def _strip_noneditable_body_visuals(model: PageModel) -> None:
     )
 
 
-def _pilot_verified_repairs() -> tuple[_VerifiedEditableRepair, ...]:
-    index_rows = {
-        6: ((1225, "易错指数★★★★☆", "易考指数★★★★☆"), (2462, "易错指数★★★★★", "易考指数★★★★☆")),
-        7: ((1311, "易错指数★★★★☆", "易考指数★★★★☆"), (2470, "易错指数★★★☆☆", "易考指数★★★★☆")),
-        8: ((887, "易错指数★★★☆☆", "易考指数★★★★☆"), (2011, "易错指数★★★★☆", "易考指数★★★★★")),
-        9: ((693, "易错指数★★★★★", "易考指数★★★★★"), (1882, "易错指数★★★★★", "易考指数★★★★☆")),
-        20: ((1012, "易错指数★★★☆☆", "易考指数★★★★☆"), (2106, "易错指数★★★☆☆", "易考指数★★★★☆")),
-        22: ((1138, "易错指数★★★☆☆", "易考指数★★★★☆"), (2209, "易错指数★★★★★", "易考指数★★★★☆")),
-    }
-    repairs: list[_VerifiedEditableRepair] = []
-    for page_index, rows in index_rows.items():
-        for row_index, (top, wrong, exam) in enumerate(rows, start=1):
-            repairs.append(
-                _VerifiedEditableRepair(
-                    page_index=page_index,
-                    block_id=f"verified-index-{page_index + 1}-{row_index}",
-                    bbox=(438.0, float(top), 1415.0, float(top + 96)),
-                    text=f"指数\t{wrong}\t{exam}",
-                    block_type="editable_option_row",
-                    tab_stops_px=(132.0, 582.0),
-                    font_color="EF168B",
-                )
-            )
-    repairs.extend(
-        (
-            _VerifiedEditableRepair(
-                6,
-                "verified-page-7-question-1",
-                (270.0, 738.0, 1998.0, 1118.0),
-                "1.（2018年广东省考）某市服务行业举行业务技能大赛，其中东区参赛人数占总人数的\n"
-                "1/5，西区参赛人数占总人数的2/5，南区参赛人数占总人数的1/4，其余的是北区的参赛人员。结\n"
-                "果东区参赛人数的1/3获奖，西区参赛人数的1/12获奖，南区参赛人数的1/9获奖。已知参赛总人\n"
-                "数超过100人，不到200人，则参赛总人数为",
-                first_line_indent_px=80.0,
-                accent_length=len("1.（2018年广东省考）"),
-            ),
-            _VerifiedEditableRepair(
-                6,
-                "verified-page-7-analysis-1",
-                (270.0, 1306.0, 1998.0, 1738.0),
-                "解析　根据题意，东区参赛人数占总人数的1/5，有1/3获奖，可知东区获奖人数占总\n"
-                "人数的1/15。西区参赛人数占总人数的2/5，有1/12获奖，可知西区获奖人数占总人数的1/30。南\n"
-                "区参赛人数占总人数的1/4，有1/9获奖，可知南区获奖人数占总人数的1/36。\n"
-                "总人数大于100，小于200，且是30和36的公倍数。四个选项中，只有D项符合。",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-            _VerifiedEditableRepair(
-                6,
-                "verified-page-7-analysis-2",
-                (270.0, 2572.0, 1998.0, 2852.0),
-                "解析　根据“生产人员与非生产人员的人数之比为4：5，而研发与非研发人员的\n"
-                "人数之比为3：5”可知，总人数能够被9整除，也能被8整除，是8和9的公倍数，且在\n"
-                "100到200之间，可求得总人数为144人。生产人数为总数的4/9，研发人数为总数的3/8，且",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-            _VerifiedEditableRepair(
-                7,
-                "verified-page-8-continuation",
-                (270.0, 298.0, 1998.0, 548.0),
-                "两者没有交集。不在生产和研发两类岗位上的职工占总人数的（1-4/9-3/8）=13/72，即共有\n"
-                "144×13/72=26人。",
-            ),
-            _VerifiedEditableRepair(
-                7,
-                "verified-page-8-question-4",
-                (270.0, 2165.0, 1998.0, 2368.0),
-                "4.（2018年福建事业）某代表队参加文艺会演的共46人，其中女生人数的4/5是男生人数\n"
-                "的3/2，那么参加演出的女生人数为多少人？",
-                first_line_indent_px=80.0,
-                accent_length=len("4.（2018年福建事业）"),
-            ),
-            _VerifiedEditableRepair(
-                7,
-                "verified-page-8-analysis-4",
-                (270.0, 2560.0, 1998.0, 2755.0),
-                "解析　根据题意可知，女生人数的4/5是男生人数的3/2，即女生人数是5的倍数，四\n"
-                "个选项中只有A项符合。",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-            _VerifiedEditableRepair(
-                20,
-                "verified-page-21-analysis-30",
-                (270.0, 1112.0, 1998.0, 1485.0),
-                "解析　根据题意，6月份前两天用去的流量为套餐总流量的1/(1+3)×100%=1/4×100%\n"
-                "=25%。因2日用去的流量为8MB，是套餐总流量的25%-15%=10%，套餐总流量为\n"
-                "8÷10%=80MB。如小张从3日开始，每天使用6MB流量，共计使用流量6×（30-2）\n"
-                "=168MB。超出套餐的流量为168+25%×80-80=108MB。",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-            _VerifiedEditableRepair(
-                22,
-                "verified-page-23-analysis-1",
-                (270.0, 1260.0, 1998.0, 1492.0),
-                "解析　根据题意，设一号车间、二号车间每天分别组装x辆、y辆自行车。那么，\n"
-                "8x+3y=6300，6x+6y=6300，通过计算可得出x=630，y=420。一号车间每天比二号车间多组\n"
-                "装630-420=210辆自行车。",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-            _VerifiedEditableRepair(
-                22,
-                "verified-page-23-analysis-2",
-                (270.0, 2328.0, 1998.0, 2658.0),
-                "解析　根据题意，假设改进前甲乙两种产品的日产量分别为3a、2a，单件生产能耗\n"
-                "分别为x、y。乙产品单件生产能耗降低20%后，变为80%y，甲和乙两种产品的总能耗降低了\n"
-                "10%，即2a×80%y+3ax=（1-10%）（3ax+2axy），计算可得x：y=2：3。改进后甲、乙两\n"
-                "种产品的单件生产能耗之比为x：80%y=2：（3×80%）=5：6。",
-                block_type="editable_callout_body",
-                first_line_indent_px=170.0,
-                accent_length=2,
-            ),
-        )
-    )
-    return tuple(repairs)
-
-
-def _apply_verified_pilot_repairs(model: PageModel) -> None:
-    if model.source_fingerprint != _VERIFIED_PILOT_SOURCE_SHA256:
+def _apply_profile_editable_repairs(
+    model: PageModel,
+    source_profile: SourceDocumentProfile | None,
+) -> None:
+    if (
+        source_profile is None
+        or model.source_fingerprint != source_profile.source_sha256
+    ):
         return
-    repairs = [item for item in _pilot_verified_repairs() if item.page_index == model.page_index]
+    repairs = source_profile.editable_repairs_for(model.page_index)
     if not repairs:
         return
     removed: set[str] = set()
@@ -1807,8 +1632,8 @@ def _apply_verified_pilot_repairs(model: PageModel) -> None:
             "action": "verified_editable_source_repair",
             "block_id": repair.block_id,
             "block_type": repair.block_type,
-            "source": "human-verified source PDF transcription",
-            "reason": "fraction/formula/rating kept editable and corrected against the source page",
+            "source": "human-verified source-profile transcription",
+            "reason": "profile-bound reviewed replacement kept as editable Word content",
             "related_block_ids": sorted(removed),
             "bbox": list(repair.bbox),
             "text_preview": repair.text[:80],
@@ -2330,6 +2155,7 @@ def apply_source_first_hybrid_policy(
     source_fingerprint: str,
     page_class: str = "ordinary_question",
     editable_body_only: bool = False,
+    source_profile: SourceDocumentProfile | None = None,
 ) -> PageModel:
     """Postprocess a fresh OCR model into an accuracy-first ordinary page."""
 
@@ -2348,7 +2174,8 @@ def apply_source_first_hybrid_policy(
         model.evidence_blocks = deepcopy(model.blocks)
         # The source image is already cleaned, so a previously inferred
         # watermark layer must never be carried into Word.
-        model.blocks = [block for block in model.blocks if block.block_type.lower() != "watermark"]
+        if source_profile is not None and source_profile.remove_detected_watermark_blocks:
+            model.blocks = [block for block in model.blocks if block.block_type.lower() != "watermark"]
         if editable_body_only:
             _normalise_editable_pilot_text(model)
             _deduplicate_talk_badges(model, image, destination)
@@ -2380,14 +2207,17 @@ def apply_source_first_hybrid_policy(
         resolve_page_model_conflicts(model)
         _merge_editable_paragraphs(model, image)
         if editable_body_only:
-            _apply_verified_pilot_repairs(model)
+            _apply_profile_editable_repairs(model, source_profile)
             _bind_answer_blanks_to_question_stems(model)
             _mark_verified_semantic_tokens(model)
             _attach_inline_callout_labels(model, image, destination)
             _derive_source_line_layouts(model, image)
         _apply_editable_width_fitting(model)
         model.warnings.append("此页从源 PDF 新渲染并重新 OCR；未读取旧任务缓存。")
-        model.warnings.append("上岸人水印在 OCR 和回退裁图之前已从源渲染中清理。")
+        if source_profile is not None and source_profile.raster_cleanup_policy:
+            model.warnings.append(
+                f"源配置的 {source_profile.raster_cleanup_policy} 水印策略已在 OCR 和回退裁图前执行。"
+            )
         if editable_body_only:
             model.warnings.append("正文零图片模式：正文、分式、公式、题干和解析均为可编辑 Word 内容；分式写为原生 OMML，上述谈标签仅保留行内装饰图。")
     return resolve_page_model_conflicts(model)

@@ -57,8 +57,8 @@ export function App() {
         <p>{engine.message}</p>
         <ul>
           <li>兼容 GPU 可用时强制优先使用 GPU；CPU 回退必须记录原因。</li>
-          <li>普通正文使用原生 Word 段落，公式和不可靠复杂区域局部截图。</li>
-          <li>381 页全书入口将在当前源文档直跑链路完成后接入。</li>
+          <li>普通正文和公式使用可编辑 Word 内容；图片只保留装饰与真实图形。</li>
+          <li>任意页数正式入口将由预检读取实际页数；381 页仅为当前大型验收基准。</li>
         </ul>
       </section>
       <footer className="action-bar">

@@ -13,6 +13,7 @@ from PIL import Image
 from .conflicts import overlap_ratio, static_page_checks
 from .models import PageBlock, PageModel
 from .native_math import stacked_fraction_count
+from .quality_policies import STRICT_FULL_DOCUMENT_COVERAGE_V1, EditableCoveragePolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +146,11 @@ def character_error_rate(reference: str, actual: str) -> CharacterErrorRate:
     return CharacterErrorRate(len(expected), errors, errors / len(expected))
 
 
-def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
+def editable_quality_report(
+    models: list[PageModel],
+    *,
+    coverage_policy: EditableCoveragePolicy = STRICT_FULL_DOCUMENT_COVERAGE_V1,
+) -> dict[str, Any]:
     """Summarize editability and image fallbacks without exposing OCR text."""
 
     pages: list[dict[str, Any]] = []
@@ -250,7 +255,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         else:
             coverage = min(1.0, editable_characters / denominator)
         page_coverages.append(coverage)
-        threshold = 0.85 if model.page_class == "ordinary_question" else 0.80 if model.page_class == "chapter_opener" else 0.0
+        threshold = coverage_policy.threshold_for(model.page_class)
         coverage_passed = coverage + 1e-9 >= threshold
         if not coverage_passed:
             coverage_failures.append(model.page_index + 1)
@@ -312,6 +317,7 @@ def editable_quality_report(models: list[PageModel]) -> dict[str, Any]:
         )
     return {
         "schema_version": 2,
+        "coverage_policy_id": coverage_policy.policy_id,
         "quality_state": "static_and_editability_checks_passed" if not conflict_pages and not coverage_failures and not body_image_failure_pages and not talk_label_crop_failure_pages and not answer_blank_failure_pages else "requires_review",
         "pages": pages,
         "summary": {

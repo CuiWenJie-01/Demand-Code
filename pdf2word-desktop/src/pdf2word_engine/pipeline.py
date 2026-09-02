@@ -11,15 +11,16 @@ from pathlib import Path
 from PIL import Image
 
 from .document_checks import assert_source_first_docx_contract
+from .document_profiles import resolve_source_document_profile
 from .execution import resolve_ocr_execution_profile
 from .job_store import file_sha256
 from .models import PageModel, RenderedPage
 from .ocr import FocusedOcrPipelineCache, create_paddle_pipeline, predict_page_model, write_page_model
 from .preflight import inspect_pdf
 from .quality import assert_body_content_editable, editable_quality_report
+from .quality_policies import EDITABLE_PILOT_COVERAGE_V1
 from .renderer import render_pages
 from .source_first import (
-    PILOT_PAGE_INDICES,
     apply_source_first_hybrid_policy,
     blank_page_model,
     classify_source_page,
@@ -267,11 +268,15 @@ def create_source_first_pilot(
     workspace.mkdir(parents=True, exist_ok=True)
     destination.mkdir(parents=True, exist_ok=True)
     report = inspect_pdf(source)
-    if report.page_count < max(PILOT_PAGE_INDICES) + 1:
-        raise ValueError("源 PDF 页数不足，无法生成约定的代表页样本。")
-    ensure_workspace_capacity(source, workspace, destination)
     fingerprint = file_sha256(source)
-    selected = list(PILOT_PAGE_INDICES)
+    source_profile = resolve_source_document_profile(
+        source_sha256=fingerprint,
+        page_count=report.page_count,
+    )
+    if source_profile is None or not source_profile.style_reference_pages:
+        raise ValueError("当前入口只生成已绑定源指纹的样式验收样本；该 PDF 没有匹配的验收配置。")
+    ensure_workspace_capacity(source, workspace, destination)
+    selected = list(source_profile.style_reference_page_indices)
     clean_pdf = workspace / "source-without-tagged-watermarks.pdf"
     vector_watermark_report = write_pdf_without_tagged_watermarks(
         source,
@@ -315,10 +320,19 @@ def create_source_first_pilot(
         physical_page = rendered_page.page_index + 1
         page_dir = page_directory(rendered_page.page_index)
         clean_image = page_dir / "clean-source.png"
-        watermark = prepare_clean_source_image(rendered_page.image_path, clean_image)
+        watermark = prepare_clean_source_image(
+            rendered_page.image_path,
+            clean_image,
+            source_fingerprint=fingerprint,
+            source_profile=source_profile,
+        )
         watermark_reports.append({"page": physical_page, **watermark})
         with Image.open(clean_image) as image:
-            page_class = classify_source_page(rendered_page.page_index, image)
+            page_class = classify_source_page(
+                rendered_page.page_index,
+                image,
+                source_profile=source_profile,
+            )
         _emit(progress, {"type": "source_page_classified", "page": physical_page, "page_class": page_class})
         if page_class == "blank":
             model = blank_page_model(
@@ -335,6 +349,7 @@ def create_source_first_pilot(
                 region_directory=page_dir / "regions",
                 source_fingerprint=fingerprint,
                 available_pages=available_physical_pages,
+                source_profile=source_profile,
             )
         elif page_class in {"cover", "section_divider"}:
             model = source_fallback_model(
@@ -375,6 +390,7 @@ def create_source_first_pilot(
                 source_fingerprint=fingerprint,
                 page_class=page_class,
                 editable_body_only=True,
+                source_profile=source_profile,
             )
             _emit(progress, {"type": "page_completed", "page": physical_page, "stage": "fresh_source_ocr"})
         if model.blocks and physical_page in available_physical_pages:
@@ -386,7 +402,7 @@ def create_source_first_pilot(
     docx = destination / f"{source.stem}-第二轮6页可编辑混合样本-v2.docx"
     quality_path = destination / f"{source.stem}-第二轮6页可编辑混合样本-质量报告-v2.json"
     create_positioned_editable_docx(models, docx)
-    quality = editable_quality_report(models)
+    quality = editable_quality_report(models, coverage_policy=EDITABLE_PILOT_COVERAGE_V1)
     structure = assert_source_first_docx_contract(docx)
     expected_native_fractions = quality["summary"]["native_stacked_fraction_spans"]
     if structure.native_math_fractions != expected_native_fractions:
@@ -409,6 +425,7 @@ def create_source_first_pilot(
     quality["source_first"] = {
         "source_pdf": str(source),
         "source_sha256": fingerprint,
+        "source_profile": source_profile.to_manifest_dict(),
         "cache_policy": "fresh render and fresh OCR only; non-empty workspace rejected",
         "selected_physical_pages": [index + 1 for index in selected],
         "page_classes": {str(model.page_index + 1): model.page_class for model in models},
@@ -416,7 +433,7 @@ def create_source_first_pilot(
         "watermark_cleanup": watermark_reports,
         "vector_watermark_cleanup": vector_watermark_report,
         "ocr_execution_profile": execution_profile.to_dict(),
-        "full_book_status": "not_run_waiting_for_pilot_acceptance",
+        "full_book_status": "not_run_pending_full_book_pipeline",
     }
     _write_json(quality_path, quality)
     manifest = workspace / "source-first-pilot.json"
@@ -425,6 +442,7 @@ def create_source_first_pilot(
         {
             "source_pdf": str(source),
             "source_sha256": fingerprint,
+            "source_profile": source_profile.to_manifest_dict(),
             "dpi": dpi,
             "selected_physical_pages": [index + 1 for index in selected],
             "watermark_cleanup": vector_watermark_report,

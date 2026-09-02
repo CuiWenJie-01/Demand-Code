@@ -6,6 +6,11 @@ from zipfile import ZipFile
 
 from PIL import Image, ImageDraw
 
+from pdf2word_engine.document_profiles import (
+    EditableRepairSpec,
+    SourceDocumentProfile,
+    get_source_document_profile,
+)
 from pdf2word_engine.models import PageBlock, PageModel, PageSize, PdfKind
 from pdf2word_engine.quality import assert_body_content_editable, body_image_blocks
 from pdf2word_engine.source_first import (
@@ -14,7 +19,8 @@ from pdf2word_engine.source_first import (
     apply_region_level_static_fallbacks,
     apply_source_first_hybrid_policy,
     classify_source_page,
-    remove_shanganren_watermark,
+    prepare_clean_source_image,
+    remove_central_neutral_gray_watermark,
     toc_page_model,
 )
 from pdf2word_engine.word import create_positioned_editable_docx
@@ -30,23 +36,89 @@ def test_watermark_removal_preserves_dark_foreground() -> None:
     # Foreground text is represented by a dark stroke crossing the watermark.
     draw.rectangle((180, 590, 740, 606), fill=(20, 20, 20))
 
-    cleaned, report = remove_shanganren_watermark(image)
+    cleaned, report = remove_central_neutral_gray_watermark(image)
 
     assert report["removed"] is True
     assert cleaned.getpixel((300, 450)) == (255, 255, 255)
     assert cleaned.getpixel((500, 598)) == (20, 20, 20)
 
 
+def test_unmatched_source_has_no_raster_cleanup_policy(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    output = tmp_path / "clean.png"
+    image = Image.new("RGB", (900, 1200), "white")
+    ImageDraw.Draw(image).rectangle((250, 420, 650, 475), fill=(228, 228, 228))
+    image.save(source)
+
+    report = prepare_clean_source_image(
+        source,
+        output,
+        source_fingerprint="0" * 64,
+    )
+
+    assert report["policy_id"] == "none"
+    with Image.open(output) as cleaned:
+        assert cleaned.convert("RGB").getpixel((300, 450)) == (228, 228, 228)
+
+
+def test_profile_repairs_are_generic_and_require_only_an_exact_source_match(tmp_path: Path) -> None:
+    source = tmp_path / "source.png"
+    Image.new("RGB", (1000, 1400), "white").save(source)
+    source_sha256 = "a" * 64
+    profile = SourceDocumentProfile(
+        profile_id="another_book_v1",
+        version=1,
+        source_sha256=source_sha256,
+        expected_page_count=1,
+        editable_repair_set="another_book_reviewed_v1",
+        editable_repairs=(
+            EditableRepairSpec(
+                physical_page=1,
+                block_id="reviewed-replacement",
+                bbox=(150, 300, 850, 350),
+                text="经源页复核后的可编辑文本。",
+            ),
+        ),
+    )
+    model = PageModel(
+        schema_version=7,
+        page_index=0,
+        size=PageSize(515.906, 728.504),
+        source_type=PdfKind.OUTLINED,
+        source_image_width_px=1000,
+        source_image_height_px=1400,
+        blocks=[
+            PageBlock("ocr-error", "text_line", (150, 300, 850, 350), 0, 0, text="错误识别"),
+        ],
+    )
+
+    result = apply_source_first_hybrid_policy(
+        model,
+        source,
+        tmp_path / "regions",
+        source_fingerprint=source_sha256,
+        page_class="ordinary_question",
+        editable_body_only=True,
+        source_profile=profile,
+    )
+
+    replacement = next(block for block in result.blocks if block.block_id == "reviewed-replacement")
+    assert replacement.text == "经源页复核后的可编辑文本。"
+    assert all(block.block_id != "ocr-error" for block in result.blocks)
+
+
 def test_toc_is_editable_word_structure(tmp_path: Path) -> None:
     source = tmp_path / "toc.png"
     Image.new("RGB", (1000, 1400), "white").save(source)
+    profile = get_source_document_profile("banyuetan_xingce_1000_part2_v1")
     model = toc_page_model(
         page_index=3,
         size=PageSize(515.906, 728.504),
         image_path=source,
         region_directory=tmp_path / "regions",
-        source_fingerprint="abc123",
+        source_fingerprint=profile.source_sha256,
         available_pages={7, 23},
+        source_profile=profile,
     )
     output = create_positioned_editable_docx([model], tmp_path / "toc.docx")
 
@@ -66,11 +138,13 @@ def test_toc_is_editable_word_structure(tmp_path: Path) -> None:
 def test_front_matter_classification_is_explicit() -> None:
     nonblank = Image.new("RGB", (500, 700), "white")
     ImageDraw.Draw(nonblank).rectangle((100, 100, 400, 300), fill="black")
-    assert classify_source_page(0, nonblank) == "cover"
-    assert classify_source_page(3, nonblank) == "table_of_contents"
-    assert classify_source_page(5, nonblank) == "section_divider"
-    assert classify_source_page(6, nonblank) == "chapter_opener"
-    assert classify_source_page(20, nonblank) == "formula_heavy"
+    profile = get_source_document_profile("banyuetan_xingce_1000_part2_v1")
+    assert classify_source_page(0, nonblank) == "ordinary_question"
+    assert classify_source_page(0, nonblank, source_profile=profile) == "cover"
+    assert classify_source_page(3, nonblank, source_profile=profile) == "table_of_contents"
+    assert classify_source_page(5, nonblank, source_profile=profile) == "section_divider"
+    assert classify_source_page(6, nonblank, source_profile=profile) == "chapter_opener"
+    assert classify_source_page(20, nonblank, source_profile=profile) == "formula_heavy"
 
     blank = Image.new("RGB", (500, 700), "white")
     assert classify_source_page(1, blank) == "blank"
